@@ -1,7 +1,40 @@
-# Tauri + React + Typescript
+# Tsukue
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+A personal Claude Code cockpit for Omarchy. One window: a left sidebar that
+edits everything Claude Code reads (memory, MCP servers, agents, skills,
+workflows, hooks, settings), a top rail of terminal tabs, and a terminal
+filling the rest, each tab running `claude` in a folder of your choice.
 
-## Recommended IDE Setup
+Tauri 2 + React 19 + Tailwind v4 + xterm.js + CodeMirror 6. Rust pty via
+portable-pty. Design of record: `CONTRACT.md`.
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+## Run
+
+```sh
+pnpm install
+./run-dev.sh          # detached dev build, log in /tmp/tsukue-dev.log
+pnpm tauri build      # release bundle (deb, rpm, AppImage)
+```
+
+`run-dev.sh` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`, which WebKitGTK needs on
+this NVIDIA + Hyprland machine, and `TSUKUE_DRIVER=/tmp/tsukue-driver.sock`,
+a debug-only socket that runs JavaScript inside the webview for UI checks:
+
+```sh
+./drive.py 'return t.store.get(t.tabs.tabsAtom).map(x => x.title)'
+./drive.py --shot /tmp/tsukue.png
+```
+
+## Checks
+
+```sh
+pnpm tsc --noEmit && pnpm build
+cd src-tauri && cargo build && cargo test && cargo clippy --all-targets
+```
+
+## Keyboard
+
+Ctrl+Shift+T new tab, Ctrl+Shift+W close, Ctrl+PageUp/PageDown switch,
+Ctrl+Shift+B toggle sidebar, Ctrl+Shift+1..7 jump to a section, Esc closes
+the editor sheet, Ctrl+S saves in it, Ctrl+Shift+C / V copy and paste in the
+terminal.
