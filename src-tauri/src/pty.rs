@@ -162,8 +162,23 @@ const APPIMAGE_VARS: &[&str] = &[
 fn sanitize_env(cmd: &mut CommandBuilder) {
     // A tab running `claude` must not think it is nested inside another Claude
     // Code session (happens when Tsukue itself is started from one, e.g. in dev).
-    cmd.env_remove("CLAUDECODE");
-    cmd.env_remove("CLAUDE_CODE_ENTRYPOINT");
+    // Only the session markers are dropped; user-level CLAUDE_CODE_* settings
+    // (for example provider switches) stay.
+    for var in [
+        "CLAUDECODE",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "CLAUDE_CODE_CHILD_SESSION",
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_CODE_SESSION_ATTENDED",
+        "CLAUDE_CODE_MESSAGING_SOCKET",
+        "CLAUDE_CODE_MESSAGING_TOKEN",
+        "CLAUDE_CODE_BRIDGE_SESSION_ID",
+        "CLAUDE_CODE_EXECPATH",
+        "CLAUDE_PID",
+        "CLAUDE_EFFORT",
+    ] {
+        cmd.env_remove(var);
+    }
 
     #[cfg(target_os = "linux")]
     if let Some(appdir) =

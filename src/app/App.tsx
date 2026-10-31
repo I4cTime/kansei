@@ -6,6 +6,7 @@ import { TabRail } from "./TabRail";
 import { TerminalArea } from "./TerminalArea";
 import { ToastHost } from "./ToastHost";
 import { installShortcuts } from "./keyboard";
+import { installDriver } from "./driver";
 import { loadPrefs, prefsAtom } from "./prefs";
 import { store, toastError } from "./store";
 import { restoreTabs } from "./tabs";
@@ -35,6 +36,7 @@ export default function App() {
   }, []);
 
   useEffect(() => installShortcuts(), []);
+  useEffect(() => installDriver(), []);
 
   useEffect(() => {
     const root = document.documentElement;

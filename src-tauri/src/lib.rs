@@ -5,13 +5,21 @@ mod pty;
 
 use tauri::{Manager, RunEvent};
 
+mod driver;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(pty::PtyState::default())
+        .manage(driver::DriverState::default())
+        .setup(|app| {
+            driver::start(app.handle());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
+            driver::driver_result,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
