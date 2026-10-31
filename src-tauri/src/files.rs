@@ -33,6 +33,14 @@ pub fn home_dir() -> Result<PathBuf, String> {
 }
 
 pub fn app_data_dir() -> Result<PathBuf, String> {
+    // TSUKUE_DATA_DIR lets a test instance keep its tabs and prefs apart from
+    // the real ones without touching XDG_DATA_HOME (which would also move mise).
+    if let Some(dir) = std::env::var_os("TSUKUE_DATA_DIR").filter(|v| !v.is_empty()) {
+        let dir = PathBuf::from(dir);
+        if dir.is_absolute() {
+            return Ok(dir);
+        }
+    }
     dirs::data_dir()
         .map(|d| d.join("tsukue"))
         .ok_or_else(|| "data directory not found".to_string())

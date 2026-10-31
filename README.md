@@ -27,6 +27,9 @@ a debug-only socket that runs JavaScript inside the webview for UI checks:
 ./drive.py --shot /tmp/tsukue.png
 ```
 
+`TSUKUE_DATA_DIR=/some/dir` runs an instance with its own tabs.json and
+prefs.json (useful for trying the release binary while a dev instance runs).
+
 ## Checks
 
 ```sh
