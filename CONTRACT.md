@@ -205,3 +205,38 @@ badge when running (plus "in tab X" when it is one of ours). Actions: Resume
 (opens a tab in `project` running `claude --resume <id>`; disabled while live),
 Delete transcript (inline confirm, `fs_delete` of the jsonl; refused while live).
 Tabs opened by Resume are titled "<basename> (resumed)".
+
+## Project scope (added 2026-10-31)
+
+Claude Code also reads per-project files. Tsukue surfaces them for the **active
+tab's cwd** ("the project"), walking up from cwd to the nearest ancestor that
+contains `.claude/`, `.mcp.json`, `CLAUDE.md` or `.git` (fall back to cwd).
+
+Project files: `<p>/.claude/agents/*.md`, `<p>/.claude/skills/*/SKILL.md`,
+`<p>/.claude/settings.json`, `<p>/.claude/settings.local.json`, `<p>/.mcp.json`
+(`{ "mcpServers": { name: config } }`), `<p>/CLAUDE.md`, `<p>/CLAUDE.local.md`.
+
+Rust:
+- Allowlist extension: a path is allowed when it is under the cwd of a pty that
+  is alive (or was spawned this run) AND its relative part is `.claude/**`,
+  `.mcp.json`, `CLAUDE.md` or `CLAUDE.local.md`. Same symlink/`..` rules as
+  `~/.claude`. Walk-up roots count as well: `project_root { cwd }` returns the
+  resolved root and the allowlist accepts that root for the same relative set.
+- `project_root` `{ cwd }` -> `{ root: string, exists: { agents, skills, settings, settingsLocal, mcpJson, claudeMd, claudeLocalMd }: boolean map }`.
+- `mcp_*` gain scope `"projectFile"` with `project` = root: reads/writes
+  `<root>/.mcp.json` (create with `{ "mcpServers": {} }` when missing, atomic,
+  key order preserved). `mcp_list` only includes the projectFile scope when the
+  front end passes `{ project }`.
+
+Front end:
+- A `projectAtom` derived from the active tab (`activeTabAtom`): `{ root, exists }`
+  refreshed when the active tab changes; null when there is no tab.
+- Agents, Skills, MCPs, Hooks and Settings panels get a scope switch at the top:
+  `User | Project` (Project label = basename of root, disabled with a tooltip
+  when no tab). Project scope lists the project files, "New ..." creates under
+  `<root>/.claude/...`, Settings-Project shows CLAUDE.md / CLAUDE.local.md /
+  settings.json / settings.local.json open buttons (create on first save).
+  Hooks-Project edits `<root>/.claude/settings.json` hooks.
+- Memory panel: the project selector defaults to the entry whose guessedPath
+  equals the active tab's root (falling back to home), and follows tab changes
+  until the user picks manually.
