@@ -35,6 +35,30 @@ prefers the dev window (`target/debug/tsukue`) when both are open.
 `TSUKUE_DATA_DIR=/some/dir` runs an instance with its own tabs.json and
 prefs.json (useful for trying the release binary while a dev instance runs).
 
+## Projects and workspaces
+
+The Projects panel shows every workspace root (default `~/Develop`, edit the list
+in Settings, This app, Projects) as a tree: groups, projects (also inside
+wrapper folders like `products/mine/mineui`) and monorepo apps and packages as
+subprojects. Each can be opened as its own Claude project, opened with related
+projects (`claude --add-dir ...`), described (Edit) and linked (Related...).
+
+Descriptions, status and relations live in `<appData>/workspaces.json`. From
+them Tsukue keeps `<root>/PROJECTS.md` up to date (it is overwritten; edit in
+the panel) and, the first time it sees a root, creates `<root>/CLAUDE.md`
+importing `@PROJECTS.md` (or appends the import once to an existing one), so
+every Claude session under the root knows the sibling projects. Related...
+also writes `permissions.additionalDirectories` in the project's
+`.claude/settings.json`, keeping entries added by hand.
+
+Git worktrees (a `.git` file pointing elsewhere) show a "worktree" chip, are
+marked "git worktree" in PROJECTS.md and do not list their monorepo apps.
+Projects you hide in the panel (and their subprojects) are left out of
+PROJECTS.md; unhide them to bring them back.
+
+Prefs (`prefs.json`) for this: `workspaceRoots`, `collapsedPaths` (collapsed
+roots and groups), `expandedPaths` (projects with their subprojects shown).
+
 ## Packaging
 
 An Arch Linux package builds from the committed state of this checkout (not
@@ -60,5 +84,6 @@ cd src-tauri && cargo build && cargo test && cargo clippy --all-targets
 
 Ctrl+Shift+T new tab, Ctrl+Shift+W close, Ctrl+PageUp/PageDown switch,
 Ctrl+Shift+B toggle sidebar, Ctrl+Shift+1..9 jump to a section, Esc closes
-the editor sheet, Ctrl+S saves in it, Ctrl+Shift+C / V copy and paste in the
-terminal.
+the editor sheet and the Projects sheets (Edit, Related, Open with), Ctrl+S
+saves in the editor, Ctrl+Enter saves the Edit sheet, Ctrl+Shift+C / V copy
+and paste in the terminal.

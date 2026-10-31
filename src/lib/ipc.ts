@@ -79,7 +79,18 @@ export type ProjectsInfo = {
   canonical: string | null;
   /** True when the path is a directory. */
   exists: boolean;
-  flags: { claudeMd: boolean; claudeDir: boolean; mcpJson: boolean; git: boolean };
+  /** worktree: `.git` is a file starting with `gitdir:` (a git worktree). */
+  flags: { claudeMd: boolean; claudeDir: boolean; mcpJson: boolean; git: boolean; worktree: boolean };
+};
+
+/** workspace_scan node (CONTRACT.md "Workspaces"). Paths are absolute, joined from the root as given. */
+export type WorkspaceKind = "root" | "group" | "project" | "subproject";
+export type WorkspaceNode = {
+  path: string;
+  name: string;
+  kind: WorkspaceKind;
+  flags: ProjectsInfo["flags"];
+  children: WorkspaceNode[];
 };
 
 export const pty = {
@@ -116,6 +127,19 @@ export const sessions = {
 export const projects = {
   /** Stat each absolute path (max 500 per call; relative paths are skipped). Registers nothing. */
   info: (paths: string[]) => invoke<ProjectsInfo[]>("projects_info", { paths }),
+};
+
+export const workspace = {
+  /** Scan workspace roots into trees; registers every root, project and subproject as a project root. */
+  scan: (roots: string[]) => invoke<WorkspaceNode[]>("workspace_scan", { roots }),
+  /** Create <root>/CLAUDE.md importing @PROJECTS.md, or append the import once. Scanned roots only. */
+  claudeMd: (root: string) => invoke<"created" | "amended" | "unchanged">("workspace_claude_md", { root }),
+  /**
+   * Set the workspace entries of permissions.additionalDirectories in <project>/.claude/settings.json:
+   * `dirs` present, `managed` entries not in `dirs` removed, everything else kept. Returns the array.
+   */
+  additionalDirs: (project: string, dirs: string[], managed: string[]) =>
+    invoke<string[]>("project_additional_dirs", { project, dirs, managed }),
 };
 
 export const project = {

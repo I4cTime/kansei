@@ -131,7 +131,9 @@ a run copy the file to `~/.claude.json.tsukue-bak`.
   saved on every change, restored at launch (each restored tab re-spawns its
   pty). Dead tabs (pty exited) show a "restart" affordance in the terminal area.
 - `prefs.json`: `{ newTabCommand: "claude" | "shell", fontSize: number, fontFamily: string, theme: "system" | "dark" | "light",
-  sidebarWidth, sidebarCollapsed, sidebarSection, pinnedProjects: string[], hiddenProjects: string[] }` (see `src/app/prefs.ts`).
+  sidebarWidth, sidebarCollapsed, sidebarSection, pinnedProjects: string[], hiddenProjects: string[],
+  workspaceRoots: string[], collapsedPaths: string[], expandedPaths: string[] }` (see `src/app/prefs.ts`).
+- `workspaces.json`: the workspace registry (see "Workspaces").
 
 ## Visual language
 
@@ -269,9 +271,10 @@ Rust command `projects_info` `{ paths: string[] }` -> `ProjectsInfo[]`
 (`src-tauri/src/projects.rs`):
 ```
 { path, canonical: string | null, exists: boolean /* is a directory */,
-  flags: { claudeMd, claudeDir, mcpJson, git }: boolean }
+  flags: { claudeMd, claudeDir, mcpJson, git, worktree }: boolean }
 ```
-Stat-only (no file reads), so it needs no allowlist and never registers a
+Stat-only (apart from the first 7 bytes of a `.git` file for `worktree`, see
+"Workspaces"), so it needs no allowlist and never registers a
 project root. Relative paths are skipped, duplicates dropped, at most 500 paths
 per call (the panel chunks). `claudeMd` = `CLAUDE.md` is a file, `claudeDir` =
 `.claude/` is a directory (not counted for home, whose `.claude` is the user
@@ -285,7 +288,8 @@ Panel:
   Pinned, Recent (default: pinned group first, then the rest by last activity;
   hidden rows left out) and All (adds a Hidden group, rows dimmed with Unhide).
   Missing folders sort last in each group. Add folder opens the folder picker
-  and pins the choice.
+  and pins the choice. (Superseded by the view select in "Workspaces": Tree,
+  Recent, All; the Pinned filter became the Pinned section.)
 - Row: label (Sessions' rule: basename, `~` for home, parent appended when
   basenames collide), pin icon, LIVE badge when a session is running, path with
   `~`, relative last activity, badges "N sessions", "N memory" (when > 0) and
@@ -299,3 +303,179 @@ Panel:
   applies it as its project filter and clears it), Pin / Unpin, Hide / Unhide.
 - Dev driver: `t.projects.{pinProject, unpinProject, hideProject, unhideProject}`
   and `t.sessionsProjectFilterAtom`.
+
+## Workspaces (added 2026-10-31)
+
+Projects live in groups under workspace roots (`~/Develop/{products,sites,lab,...}`),
+some one level deeper in a wrapper folder (`products/mine/mineui`), some as apps
+of a monorepo (`sites/i4c-sites/apps/sparkle`). The Projects panel shows this as
+a tree, every node opens as its own Claude project, and each root gets a
+generated `PROJECTS.md` that a root `CLAUDE.md` imports, so every session under
+the root knows the other projects.
+
+### Prefs
+
+- `workspaceRoots: string[]`: absolute folders (trimmed, trailing slashes
+  dropped, relative entries and duplicates dropped). When prefs.json has no
+  `workspaceRoots` key, it defaults at load to `[<home>/Develop]` if that is a
+  folder, else `[]`; an explicit `[]` stays empty.
+- `collapsedPaths: string[]`: roots and groups the user collapsed (default expanded).
+- `expandedPaths: string[]`: projects whose subprojects the user expanded
+  (default collapsed). Two lists because the defaults differ by kind.
+- Settings, This app, "Projects": the list of roots with Remove, and Add root
+  (folder picker). Changing the list rescans right away.
+
+### Rust (`src-tauri/src/workspace.rs`)
+
+| command | args | returns |
+|---|---|---|
+| `workspace_scan` | `{ roots: string[] }` | `WorkspaceNode[]` (one per existing root) |
+| `workspace_claude_md` | `{ root }` | `"created" \| "amended" \| "unchanged"` |
+| `project_additional_dirs` | `{ project, dirs: string[], managed: string[] }` | `string[]` (the resulting array) |
+
+`WorkspaceNode { path, name, kind: "root" | "group" | "project" | "subproject", flags: ProjectFlags, children }`
+(`flags` as in `projects_info`, which also gained `worktree`). Paths are joined
+from the root as given (not canonicalised).
+
+`flags.worktree` (here and in `projects_info`): `.git` is a regular file whose
+content starts with `gitdir:` (a git worktree). Reading its first 7 bytes is
+the only file read; everything else is stat only.
+
+Scan rules:
+- Markers that make a folder a project: `.git` (dir or file), `CLAUDE.md` (file),
+  `.claude/` (dir; never for home).
+- Depth 1 under a root: every directory is a `group`. Files are ignored.
+- Depth 2: a directory with markers is a `project`. One without markers whose
+  direct subdirectories include marker folders is a wrapper `group` of those
+  (as `project`s); its other subdirectories are ignored. One with neither is a
+  plain `project` (`lab/feature-specs`, `marketing/aibou`).
+- A worktree stays a `project` but gets no subprojects (it repeats its main
+  checkout's apps, e.g. `sites/i4c-sites-asteria`).
+- Monorepos: a project with `pnpm-workspace.yaml`, `apps/` or `packages/` lists
+  each `apps/*` and `packages/*` directory with `package.json`, `CLAUDE.md` or
+  `.claude/` as a `subproject` (one level; apps and packages sorted together).
+  Inner repos of a project that are not under apps/packages are not listed.
+- Hidden directories, `node_modules`, `target`, `dist`, `build` and `out` are
+  skipped (`vendor` is not). Symlinked directories are never followed (the
+  root itself may be a link). Children sort by name, case-insensitive. The whole
+  result stops at 3000 nodes (pre-order). Roots: absolute, `..` refused,
+  trailing slash dropped, missing and duplicate roots skipped.
+- Every root, project and subproject is registered as a project root in the
+  files allowlist (groups are not), and roots are remembered for
+  `workspace_claude_md`, which refuses anything else.
+
+Allowlist: the project relative set is now `.claude/**`, `.mcp.json`,
+`CLAUDE.md`, `CLAUDE.local.md` and `PROJECTS.md` (read/write, top level only).
+
+`workspace_claude_md`: when `<root>/CLAUDE.md` is missing, create
+```
+# <basename of root> workspace
+
+Every project under this folder is listed in @PROJECTS.md with its path, a one-line description, its status and the projects it is related to. Read it before assuming a sibling project does not exist.
+```
+plus a blank line and `Current focus: @FOCUS.md` when `<root>/FOCUS.md` exists.
+When it exists without the text `@PROJECTS.md`, append a blank line and the
+paragraph. Nothing else in an existing file is touched.
+
+`project_additional_dirs`: read-modify-write of `<project>/.claude/settings.json`
+through the allowlist (atomic, `preserve_order`, the file's trailing newline
+kept, same lock as `.mcp.json`). Every `dirs` entry ends up in
+`permissions.additionalDirectories` (appended when new); entries in `managed`
+but not in `dirs` are removed; every other entry, key and key order stays.
+Paths compare with trailing slashes trimmed; `dirs` must be absolute. A missing
+file is created (`{ "permissions": { "additionalDirectories": [...] } }`) only
+when there is something to add; nothing is written when nothing changes. A
+non-object `permissions` or non-array `additionalDirectories` is an error and
+the file is left alone.
+
+### Registry (front end, `src/panels/projects/workspaceStore.ts` + `workspace.ts`)
+
+- `<appData>/workspaces.json`:
+  `{ "<root>": { "<absolute project path>": { "description": string, "status": "idea"|"active"|"live"|"parked"|"archived"|null, "related": string[] } } }`,
+  read and written with `fs_read_text` / `fs_write_text`. Entries that become
+  empty are removed. If the file cannot be parsed, nothing is written over it
+  (edits fail with an error until it is fixed).
+- A root's first registry write is adding its key (`{}`) the first time it is
+  scanned; right after it, `workspace_claude_md` runs once for that root and a
+  toast says when CLAUDE.md was created or amended. Later scans never touch
+  CLAUDE.md again (so a removed import line stays removed).
+- `<root>/PROJECTS.md` is rendered after every scan and every registry change
+  and written when the text differs from the file (last written text cached per
+  root; the file is read once per run). Format:
+  ```
+  # Projects in ~/Develop
+  Generated by Tsukue from the folder tree and the descriptions kept in its Projects panel. Edit descriptions there; this file is overwritten.
+
+  ## products
+  - aibou - `products/aibou` - live - Pet care app (Next + Capacitor). Related: niwa, i4c-sites
+  - mineui - `products/mine/mineui`
+  ...
+
+  ## sites
+  - i4c-sites - `sites/i4c-sites`
+    - sparkle - `sites/i4c-sites/apps/sparkle`
+  ```
+  A worktree's line gets ` - git worktree` right after the path (before status
+  and description). Projects hidden in the Projects panel (prefs
+  `hiddenProjects`, matched by path or canonical path, so an alias spelling
+  counts; pinned wins over hidden as in the panel) are left out together with
+  all their subprojects, and a hidden subproject is left out on its own; their
+  registry entries stay in workspaces.json. Hiding, unhiding, pinning and
+  unpinning re-render and write only when the text changed, like an edit.
+  One `##` per group that has projects (blank line before each), wrapper
+  projects listed in their group in tree order, subprojects indented two spaces
+  under their project. Status and description parts are omitted when empty;
+  descriptions are collapsed to one line. "Related:" lists basenames, with the
+  path in parentheses when another project in the trees has the same basename
+  (relative to this root, `~`-style for other roots); it follows the
+  description after a full stop, or is its own ` - Related: ...` part when there
+  is no description.
+- Scans run at boot (after prefs load), when `workspaceRoots` changes, and on
+  every Projects panel load (manual and the 15 s refresh). Operations are
+  serialised.
+
+### Panel
+
+1. Search box, view select (Tree default, Recent, All) and Add folder. Search
+   applies to every view; it also matches descriptions, status and the
+   relative path.
+2. Pinned section (when any).
+3. Tree (Tree view): per root a sticky header (`~/Develop`, project count,
+   collapse), groups as collapsible headers with a count, wrapper groups nested
+   one level deeper, projects as rows (name, path relative to the root,
+   description line, status chip, flag chips, sessions / memory / LIVE badges,
+   related chips), subprojects indented under their project behind a toggle
+   (`+N` when closed), a "worktree" chip for git worktrees. While searching everything matching is expanded, a
+   project shows when it or a subproject matches and only matching subprojects
+   show. Hidden rows (and their subprojects) are not in the tree.
+4. Home section: the home folder row labelled "home" (path `~`), after the trees.
+5. Recent: the flat list of folders from sessions, memory, pinned (by last
+   activity). All: every row, tree projects included, plus the Hidden group.
+
+Tree projects and home are row sources in `mergeProjects` (`tree` input) but
+rows only from the tree are not `known`, so they stay out of Recent. Session
+and memory counts merge by canonical folder as before.
+
+Row actions (hover or focus): Open, Shell, Open with..., Resume last, Sessions,
+Related..., Edit, Pin / Unpin, Hide / Unhide. Related and Edit are disabled for
+folders outside every workspace root.
+
+- Edit: sheet with a description textarea (Ctrl+Enter saves) and a status
+  select; saving updates the registry and PROJECTS.md.
+- Related...: sheet listing every project and subproject of the trees except
+  this one (search, checkboxes, current relations checked). Save calls
+  `project_additional_dirs` with `managed` = every workspace project path plus
+  the previous relations, then saves `related` (in tree order) in the registry.
+- Open with...: the same picker with the related projects pre-checked; Open
+  starts a tab in the project running `claude` with `--add-dir <path>` per
+  checked project as separate argv entries (whatever prefs.newTabCommand says),
+  titled with the project name. `TabSpec` already carried `args`, so it did not
+  change.
+
+Sheets render through the overlay host (`src/panels/shared/Sheet.tsx`,
+`openSheet`); opening one while another overlay is open is refused with a toast
+so an editor with unsaved changes is never replaced.
+
+Dev driver: `t.workspaces` (`treeAtom`, `registryAtom`, `scanWorkspaces`,
+`saveEntry`, `saveRelated`, `workspacePaths`), `t.workspaceModel` (pure helpers),
+`t.ipc.workspace`, and `t.projects.{addWorkspaceRoot, removeWorkspaceRoot}`.

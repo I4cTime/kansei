@@ -4,6 +4,7 @@ mod memory;
 mod projects;
 mod pty;
 mod sessions;
+mod workspace;
 
 use tauri::{Manager, RunEvent};
 
@@ -41,6 +42,9 @@ pub fn run() {
             mcp::mcp_remove,
             sessions::sessions_list,
             projects::projects_info,
+            workspace::workspace_scan,
+            workspace::workspace_claude_md,
+            workspace::project_additional_dirs,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

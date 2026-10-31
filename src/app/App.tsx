@@ -12,6 +12,7 @@ import { store, toastError } from "./store";
 import { restoreTabs } from "./tabs";
 import { startPtyRouting } from "./terminals";
 import { themeTickAtom } from "./terminalTheme";
+import { startWorkspaces } from "../panels/projects/workspaceStore";
 
 let booted = false;
 async function boot() {
@@ -23,6 +24,7 @@ async function boot() {
     toastError(e, "Could not listen for terminal output");
   }
   await loadPrefs();
+  startWorkspaces();
   await restoreTabs();
 }
 

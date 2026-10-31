@@ -241,6 +241,18 @@ fn modify_project_file(
     path: &Path,
     f: impl FnOnce(&mut Map<String, Value>) -> Result<(), String>,
 ) -> Result<(), String> {
+    modify_json_file(path, |map| f(map).map(|()| true)).map(|_| ())
+}
+
+/// Locked read-modify-write of a JSON object file inside a project (`.mcp.json`,
+/// `.claude/settings.json`), created when missing. Key order is preserved
+/// (`preserve_order`) and a trailing newline is kept as it was. `f` returns
+/// whether it changed anything; nothing is written when it did not. Returns
+/// whether the file was written.
+pub fn modify_json_file(
+    path: &Path,
+    f: impl FnOnce(&mut Map<String, Value>) -> Result<bool, String>,
+) -> Result<bool, String> {
     let _guard = PROJECT_FILE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let newline = match fs::read_to_string(path) {
         Ok(t) => t.is_empty() || t.ends_with('\n'),
@@ -250,14 +262,17 @@ fn modify_project_file(
     let Value::Object(map) = &mut root else {
         return Err(format!("{} is not a JSON object", path.display()));
     };
-    f(map)?;
+    if !f(map)? {
+        return Ok(false);
+    }
     let mut text =
         serde_json::to_string_pretty(&root).map_err(|e| format!("cannot serialise: {e}"))?;
     if newline {
         text.push('\n');
     }
     atomic_write(path, text.as_bytes(), Some(0o644))
-        .map_err(|e| format!("cannot write {}: {e}", path.display()))
+        .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    Ok(true)
 }
 
 pub fn project_file_upsert_at(path: &Path, name: &str, config: Value) -> Result<(), String> {

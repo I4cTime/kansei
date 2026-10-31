@@ -12,8 +12,10 @@
 //!
 //! Project scope (CONTRACT.md "Project scope"): every pty cwd spawned this run
 //! and every root returned by `project_root` is a project root. Below such a
-//! root only `.claude/**`, `.mcp.json`, `CLAUDE.md` and `CLAUDE.local.md` are
-//! allowed, with the same `..` and symlink rules as `~/.claude`.
+//! root only `.claude/**`, `.mcp.json`, `CLAUDE.md`, `CLAUDE.local.md` and
+//! `PROJECTS.md` (the workspace registry Tsukue generates, CONTRACT.md
+//! "Workspaces") are allowed, with the same `..` and symlink rules as `~/.claude`.
+//! `workspace_scan` registers every workspace root, project and subproject.
 
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
@@ -172,6 +174,7 @@ fn project_rel_ok(rel: &Path) -> bool {
         (Some(Component::Normal(first)), None) => {
             first == ".mcp.json"
                 || first == "CLAUDE.md"
+                || first == "PROJECTS.md"
                 || first == "CLAUDE.local.md"
                 || first == ".claude"
         }
@@ -1004,6 +1007,7 @@ mod tests {
         for ok in [
             ".mcp.json",
             "CLAUDE.md",
+            "PROJECTS.md",
             "CLAUDE.local.md",
             ".claude",
             ".claude/a/b.md",
@@ -1015,6 +1019,9 @@ mod tests {
             "src",
             ".mcp.json/x",
             "CLAUDE.md/x",
+            "PROJECTS.md/x",
+            "sub/PROJECTS.md",
+            "FOCUS.md",
             "a/.claude",
             ".git/config",
         ] {

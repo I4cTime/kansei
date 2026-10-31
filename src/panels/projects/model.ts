@@ -27,11 +27,14 @@ export type ProjectRow = {
   lastSessionTitle: string | null;
   /** The Session.project value with the most sessions, for the Sessions panel filter. */
   sessionsKey: string | null;
+  /** Seen in sessions, memory, pinned or hidden (rows only in a workspace tree are not). */
+  known: boolean;
 };
 
-export type ProjectFilter = "recent" | "pinned" | "all";
+/** Projects panel views: the workspace tree, the flat Recent list, or everything. */
+export type ProjectFilter = "tree" | "recent" | "all";
 
-export const NO_FLAGS: ProjectFlags = { claudeMd: false, claudeDir: false, mcpJson: false, git: false };
+export const NO_FLAGS: ProjectFlags = { claudeMd: false, claudeDir: false, mcpJson: false, git: false, worktree: false };
 
 /** Trim and drop trailing slashes ("/" stays "/"). */
 export function normPath(p: string): string {
@@ -42,7 +45,7 @@ export function normPath(p: string): string {
 const isAbs = (p: string) => p.startsWith("/");
 
 /** Every absolute folder the sources mention, normalised and deduplicated (the projects_info input). */
-export function collectPaths(list: Session[], mem: MemoryProject[], pinned: string[], hidden: string[]): string[] {
+export function collectPaths(list: Session[], mem: MemoryProject[], pinned: string[], hidden: string[], extra: string[] = []): string[] {
   const out = new Set<string>();
   const add = (p: string | null | undefined) => {
     if (!p) return;
@@ -53,6 +56,7 @@ export function collectPaths(list: Session[], mem: MemoryProject[], pinned: stri
   for (const m of mem) add(m.guessedPath);
   for (const p of pinned) add(p);
   for (const p of hidden) add(p);
+  for (const p of extra) add(p);
   return [...out];
 }
 
@@ -64,6 +68,7 @@ type Acc = {
   memory: number;
   resume: Session | null;
   keyCounts: Map<string, number>;
+  known: boolean;
 };
 
 /**
@@ -71,7 +76,8 @@ type Acc = {
  * - sessions: every non-null `project` counts one session; live = sessions with `live`;
  *   lastTs = max lastTs; lastSessionId = newest session with a transcript that is not live;
  * - memory projects with a resolved `guessedPath` add their file count (minus MEMORY.md);
- * - pinned and hidden prefs add folders of their own; pinned wins over hidden.
+ * - pinned and hidden prefs add folders of their own; pinned wins over hidden;
+ * - `tree` (workspace projects and home) adds rows that are not `known` unless another source has them.
  * `info` maps a normalised path to its projects_info result; a path without one yet
  * is assumed to exist (it is fetched right after) and keys on itself.
  */
@@ -81,6 +87,7 @@ export function mergeProjects(input: {
   pinned: string[];
   hidden: string[];
   info: Map<string, ProjectsInfo>;
+  tree?: string[];
   home?: string;
 }): ProjectRow[] {
   const { info } = input;
@@ -89,17 +96,18 @@ export function mergeProjects(input: {
     const c = info.get(p)?.canonical;
     return c ? normPath(c) : p;
   };
-  const get = (raw: string | null | undefined): Acc | null => {
+  const get = (raw: string | null | undefined, known = true): Acc | null => {
     if (!raw) return null;
     const p = normPath(raw);
     if (!isAbs(p)) return null;
     const key = keyOf(p);
     let a = acc.get(key);
     if (!a) {
-      a = { aliases: new Set(), sessions: 0, live: 0, lastTs: 0, memory: 0, resume: null, keyCounts: new Map() };
+      a = { aliases: new Set(), sessions: 0, live: 0, lastTs: 0, memory: 0, resume: null, keyCounts: new Map(), known: false };
       acc.set(key, a);
     }
     a.aliases.add(p);
+    if (known) a.known = true;
     return a;
   };
 
@@ -120,6 +128,7 @@ export function mergeProjects(input: {
   const hidden = new Set<string>();
   for (const p of input.pinned) if (get(p)) pinned.add(normPath(p));
   for (const p of input.hidden) if (get(p)) hidden.add(normPath(p));
+  for (const p of input.tree ?? []) get(p, false);
 
   const rows: ProjectRow[] = [];
   for (const [key, a] of acc) {
@@ -145,6 +154,7 @@ export function mergeProjects(input: {
       lastSessionId: a.resume?.id ?? null,
       lastSessionTitle: a.resume?.title ?? null,
       sessionsKey,
+      known: a.known,
     });
   }
   labelRows(rows, input.home);
@@ -171,25 +181,32 @@ export function compareRows(a: ProjectRow, b: ProjectRow): number {
   return b.lastTs - a.lastTs || a.label.localeCompare(b.label, undefined, { sensitivity: "base" });
 }
 
-/** Rows for a filter and query (case-insensitive, all words must match label or path). */
-export function filterRows(rows: ProjectRow[], query: string, filter: ProjectFilter, home?: string): ProjectRow[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+export const queryWords = (query: string) => query.toLowerCase().split(/\s+/).filter(Boolean);
+
+/**
+ * Rows for a view and query (case-insensitive, all words must match the label,
+ * path or `extra(row)`, e.g. its description). "tree" keeps only pinned rows
+ * (the tree itself is rendered from the scan), "recent" known rows that are not
+ * hidden, "all" everything.
+ */
+export function filterRows(rows: ProjectRow[], query: string, filter: ProjectFilter, home?: string, extra?: (r: ProjectRow) => string): ProjectRow[] {
+  const words = queryWords(query);
   return rows.filter((r) => {
-    if (filter === "pinned" && !r.pinned) return false;
-    if (filter === "recent" && r.hidden) return false;
+    if (filter === "tree" && !r.pinned) return false;
+    if (filter === "recent" && (r.hidden || !r.known)) return false;
     if (words.length === 0) return true;
-    const hay = [r.label, r.path, tildify(r.path, home), ...r.aliases].join("\n").toLowerCase();
+    const hay = [r.label, r.path, tildify(r.path, home), ...r.aliases, extra?.(r) ?? ""].join("\n").toLowerCase();
     return words.every((w) => hay.includes(w));
   });
 }
 
 export type RowGroup = { key: "pinned" | "recent" | "hidden"; title: string; rows: ProjectRow[] };
 
-/** Pinned, then the rest, then hidden (only present under "all"). Empty groups are dropped. */
-export function groupRows(rows: ProjectRow[]): RowGroup[] {
+/** Pinned, then the rest (titled `restTitle`), then hidden (only present under "all"). Empty groups are dropped. */
+export function groupRows(rows: ProjectRow[], restTitle = "Recent"): RowGroup[] {
   const groups: RowGroup[] = [
     { key: "pinned", title: "Pinned", rows: rows.filter((r) => r.pinned) },
-    { key: "recent", title: "Recent", rows: rows.filter((r) => !r.pinned && !r.hidden) },
+    { key: "recent", title: restTitle, rows: rows.filter((r) => !r.pinned && !r.hidden) },
     { key: "hidden", title: "Hidden", rows: rows.filter((r) => r.hidden) },
   ];
   return groups.filter((g) => g.rows.length > 0);

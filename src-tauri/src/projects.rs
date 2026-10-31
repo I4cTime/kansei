@@ -1,8 +1,9 @@
 //! Project folder facts for the Projects panel (CONTRACT.md "Projects").
 //!
-//! Stat-only: it checks whether each path is a directory and which Claude
-//! markers sit in it, never reads a file and never registers anything as a
-//! project root, so it needs no allowlist.
+//! Stat-only apart from the first 7 bytes of a `.git` file (the `worktree`
+//! flag): it checks whether each path is a directory and which Claude markers
+//! sit in it, and never registers anything as a project root, so it needs no
+//! allowlist.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -21,6 +22,8 @@ pub struct ProjectFlags {
     claude_dir: bool,
     mcp_json: bool,
     git: bool,
+    /// `.git` is a file starting with `gitdir:` (a git worktree or submodule checkout).
+    worktree: bool,
 }
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
@@ -55,12 +58,43 @@ pub fn info_for(path: &str, home: Option<&Path>) -> ProjectsInfo {
         path: path.to_owned(),
         canonical: canonical.map(|c| c.to_string_lossy().into_owned()),
         exists,
-        flags: ProjectFlags {
-            claude_md: p.join("CLAUDE.md").is_file(),
-            claude_dir: !is_home && p.join(".claude").is_dir(),
-            mcp_json: p.join(".mcp.json").is_file(),
-            git: p.join(".git").exists(),
-        },
+        flags: flags_of(p, is_home),
+    }
+}
+
+/// The Claude markers in one folder (stat only). `is_home` drops `.claude`,
+/// which in home is the user config dir.
+pub fn flags_of(p: &Path, is_home: bool) -> ProjectFlags {
+    ProjectFlags {
+        claude_md: p.join("CLAUDE.md").is_file(),
+        claude_dir: !is_home && p.join(".claude").is_dir(),
+        mcp_json: p.join(".mcp.json").is_file(),
+        git: p.join(".git").exists(),
+        worktree: is_worktree(&p.join(".git")),
+    }
+}
+
+/// `.git` is a regular file whose content starts with `gitdir:`. Reads at most
+/// the first 7 bytes, so this is the only file read in a scan.
+fn is_worktree(git: &Path) -> bool {
+    use std::io::Read;
+    if !std::fs::symlink_metadata(git).is_ok_and(|m| m.is_file()) {
+        return false;
+    }
+    let mut head = [0u8; 7];
+    std::fs::File::open(git)
+        .and_then(|mut f| f.read_exact(&mut head))
+        .is_ok_and(|()| &head == b"gitdir:")
+}
+
+impl ProjectFlags {
+    pub fn is_worktree(&self) -> bool {
+        self.worktree
+    }
+
+    /// `.git`, `CLAUDE.md` or `.claude/`: the folder is a project of its own.
+    pub fn is_project(&self) -> bool {
+        self.git || self.claude_md || self.claude_dir
     }
 }
 
@@ -127,7 +161,8 @@ mod tests {
                 claude_md: true,
                 claude_dir: true,
                 mcp_json: true,
-                git: true
+                git: true,
+                worktree: false
             }
         );
         assert!(list[1].exists);
@@ -138,8 +173,34 @@ mod tests {
                 claude_md: false,
                 claude_dir: false,
                 mcp_json: false,
-                git: true
+                git: true,
+                worktree: true
             }
+        );
+    }
+
+    #[test]
+    fn worktree_needs_a_gitdir_file() {
+        let (_t, base) = base();
+        let wt = base.join("wt");
+        fs::create_dir_all(&wt).unwrap();
+        fs::write(wt.join(".git"), "gitdir: /repo/.git/worktrees/wt\n").unwrap();
+        let other = base.join("other");
+        fs::create_dir_all(&other).unwrap();
+        fs::write(other.join(".git"), "not a pointer").unwrap();
+        let short = base.join("short");
+        fs::create_dir_all(&short).unwrap();
+        fs::write(short.join(".git"), "git").unwrap();
+        let repo = base.join("repo");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        let list = infos(&[s(&wt), s(&other), s(&short), s(&repo)], None);
+        let w: Vec<(bool, bool)> = list
+            .iter()
+            .map(|i| (i.flags.git, i.flags.worktree))
+            .collect();
+        assert_eq!(
+            w,
+            [(true, true), (true, false), (true, false), (true, false)]
         );
     }
 
@@ -214,7 +275,7 @@ mod tests {
         for key in ["path", "canonical", "exists", "flags"] {
             assert!(json.get(key).is_some(), "missing {key}");
         }
-        for key in ["claudeMd", "claudeDir", "mcpJson", "git"] {
+        for key in ["claudeMd", "claudeDir", "mcpJson", "git", "worktree"] {
             assert!(json["flags"].get(key).is_some(), "missing flags.{key}");
         }
     }

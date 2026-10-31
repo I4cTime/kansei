@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAtomValue } from "jotai";
-import { FileText } from "lucide-react";
+import { FileText, FolderPlus, X } from "lucide-react";
 import { prefsAtom, savePrefs, type Prefs } from "../../app/prefs";
 import { refreshProject } from "../../app/project";
 import type { ProjectInfo } from "../../lib/ipc";
-import { Badge, Button, Field, Select, TextInput, Toggle, cx } from "../ui";
+import { Badge, Button, Field, IconButton, Select, TextInput, Toggle, cx } from "../ui";
 import { useOpenEditor } from "../shared/EditorSheet";
-import { getPaths, readJsonObject, useLoad, useToast, writeJson } from "../shared/hooks";
+import { getPaths, readJsonObject, useLoad, usePaths, useToast, writeJson } from "../shared/hooks";
 import { Note, Panel, SectionHeader } from "../shared/list";
-import { basename, joinPath } from "../shared/paths";
+import { basename, joinPath, tildify } from "../shared/paths";
+import { addWorkspaceRootWithPicker, removeWorkspaceRoot } from "../projects/actions";
 import { ScopeSwitch, useScope } from "../shared/ScopeSwitch";
 
 type Tab = "claude" | "app";
@@ -264,6 +265,7 @@ function AppSettings() {
           </Select>
         </Field>
       </div>
+      <WorkspaceRoots />
       <SectionHeader title="Terminal" />
       <div className="flex flex-col gap-2.5 px-3 py-1">
         <Field label="Font size" hint="8 to 32 px">
@@ -301,5 +303,50 @@ function AppSettings() {
       <Note>Saved to ~/.local/share/tsukue/prefs.json. Terminals pick up font and theme changes live.</Note>
       <div className="h-3" />
     </div>
+  );
+}
+
+function WorkspaceRoots() {
+  const roots = useAtomValue(prefsAtom).workspaceRoots;
+  const home = usePaths()?.home;
+  const toast = useToast();
+  const add = async () => {
+    try {
+      const p = await addWorkspaceRootWithPicker();
+      if (p) toast.info(`Added workspace root ${tildify(p, home)}`);
+    } catch (e) {
+      toast.error(e, "Could not add the workspace root");
+    }
+  };
+  return (
+    <>
+      <SectionHeader title="Projects" />
+      <div className="flex flex-col gap-1.5 px-3 py-1" data-workspace-roots>
+        <span className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">Workspace roots</span>
+        {roots.length === 0 && <span className="text-[11px] text-fg-muted">None. The Projects tree stays empty.</span>}
+        {roots.map((r) => (
+          <div key={r} className="flex min-w-0 items-center gap-1 rounded-ui border border-border bg-bg-sunken py-0.5 pr-0.5 pl-2">
+            <span className="min-w-0 flex-1 truncate font-mono text-xs text-fg" title={r}>
+              {tildify(r, home)}
+            </span>
+            <IconButton
+              icon={X}
+              danger
+              title={`Remove ${tildify(r, home)}`}
+              onClick={() => removeWorkspaceRoot(r).catch((e) => toast.error(e, "Could not save prefs"))}
+            />
+          </div>
+        ))}
+        <div>
+          <Button icon={FolderPlus} onClick={() => void add()}>
+            Add root
+          </Button>
+        </div>
+      </div>
+      <Note>
+        The Projects tree scans each root (groups, then projects, monorepo apps as subprojects) and keeps a generated PROJECTS.md in it. Removing a root keeps its
+        descriptions.
+      </Note>
+    </>
   );
 }

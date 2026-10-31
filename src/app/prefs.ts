@@ -10,6 +10,9 @@
 //   sidebarSection:   string | null        id of the active sidebar panel
 //   pinnedProjects:   string[]             folders pinned in the Projects panel (absolute paths)
 //   hiddenProjects:   string[]             folders hidden from the Projects panel's default views
+//   workspaceRoots:   string[]             folders the Projects tree scans (default [~/Develop] when it exists)
+//   collapsedPaths:   string[]             tree roots and groups the user collapsed (default: expanded)
+//   expandedPaths:    string[]             tree projects whose subprojects the user expanded (default: collapsed)
 //
 // Usage from a panel:
 //   const prefs = useAtomValue(prefsAtom);
@@ -18,7 +21,7 @@
 // persists every change after a short debounce. Terminals pick up font and theme
 // changes live.
 import { atom } from "jotai";
-import { files } from "../lib/ipc";
+import { files, projects } from "../lib/ipc";
 import { debounce, getPaths, joinPath, store, toastError } from "./store";
 
 export type NewTabCommand = "claude" | "shell";
@@ -34,6 +37,9 @@ export type Prefs = {
   sidebarSection: string | null;
   pinnedProjects: string[];
   hiddenProjects: string[];
+  workspaceRoots: string[];
+  collapsedPaths: string[];
+  expandedPaths: string[];
 };
 
 export const SIDEBAR_DEFAULT = 300;
@@ -51,6 +57,9 @@ export const DEFAULT_PREFS: Prefs = {
   sidebarSection: null,
   pinnedProjects: [],
   hiddenProjects: [],
+  workspaceRoots: [],
+  collapsedPaths: [],
+  expandedPaths: [],
 };
 
 export const prefsAtom = atom<Prefs>(DEFAULT_PREFS);
@@ -66,6 +75,18 @@ function stringList(v: unknown, fallback: string[]): string[] {
   if (!Array.isArray(v)) return fallback;
   const out: string[] = [];
   for (const x of v) if (typeof x === "string" && x.trim() && !out.includes(x.trim())) out.push(x.trim());
+  return out;
+}
+
+/** Like stringList, for absolute folders: relative entries dropped, trailing slashes trimmed. */
+function folderList(v: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(v)) return fallback;
+  const out: string[] = [];
+  for (const x of v) {
+    if (typeof x !== "string") continue;
+    const p = x.trim().replace(/\/+$/, "") || (x.trim().startsWith("/") ? "/" : "");
+    if (p.startsWith("/") && !out.includes(p)) out.push(p);
+  }
   return out;
 }
 
@@ -86,6 +107,9 @@ export function sanitizePrefs(raw: unknown): Prefs {
     sidebarSection: typeof r.sidebarSection === "string" ? r.sidebarSection : d.sidebarSection,
     pinnedProjects: stringList(r.pinnedProjects, d.pinnedProjects),
     hiddenProjects: stringList(r.hiddenProjects, d.hiddenProjects),
+    workspaceRoots: folderList(r.workspaceRoots, d.workspaceRoots),
+    collapsedPaths: stringList(r.collapsedPaths, d.collapsedPaths),
+    expandedPaths: stringList(r.expandedPaths, d.expandedPaths),
   };
 }
 
@@ -109,15 +133,33 @@ export function setPrefs(patch: Partial<Prefs>) {
   store.set(prefsAtom, { ...store.get(prefsAtom), ...patch });
 }
 
+/** [<home>/Develop] when it is a folder, else []. */
+async function defaultWorkspaceRoots(): Promise<string[]> {
+  try {
+    const dev = joinPath((await getPaths()).home, "Develop");
+    const [info] = await projects.info([dev]);
+    return info?.exists ? [dev] : [];
+  } catch {
+    return [];
+  }
+}
+
 let loadStarted = false;
 export async function loadPrefs(): Promise<void> {
   if (loadStarted) return;
   loadStarted = true;
   try {
     const path = await prefsPath();
+    let raw: Record<string, unknown> = {};
     if (await files.exists(path)) {
-      const text = await files.readText(path);
-      store.set(prefsAtom, sanitizePrefs(JSON.parse(text)));
+      const v: unknown = JSON.parse(await files.readText(path));
+      if (v && typeof v === "object") raw = v as Record<string, unknown>;
+      store.set(prefsAtom, sanitizePrefs(raw));
+    }
+    // No workspaceRoots key yet: default to ~/Develop when that folder exists.
+    if (!Array.isArray(raw.workspaceRoots)) {
+      const roots = await defaultWorkspaceRoots();
+      store.set(prefsAtom, { ...store.get(prefsAtom), workspaceRoots: roots });
     }
   } catch (e) {
     toastError(e, "Could not read prefs.json");
