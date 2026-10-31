@@ -2,7 +2,7 @@
 # Start Tsukue in dev mode detached, log to /tmp/tsukue-dev.log.
 # Kills a previous instance and its Vite server first.
 cd "$(dirname "$0")"
-pkill -f 'target/debug/tsukue$' 2>/dev/null
+pkill -x tsukue 2>/dev/null
 fuser -k 1420/tcp >/dev/null 2>&1
 sleep 1
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
