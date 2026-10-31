@@ -182,8 +182,8 @@ pub struct Roots {
     c_claude_json: PathBuf,
     c_app_data: PathBuf,
     c_credentials: PathBuf,
-    /// Project roots (lexical and canonical forms mixed; all absolute, no `..`).
-    projects: Vec<PathBuf>,
+    /// Project roots as (given, canonical) pairs; all absolute, no `..`.
+    projects: Vec<(PathBuf, PathBuf)>,
 }
 
 impl Roots {
@@ -206,7 +206,10 @@ impl Roots {
 
     /// Add project roots (see `register_project_root`).
     pub fn with_projects(mut self, roots: impl IntoIterator<Item = PathBuf>) -> Self {
-        self.projects.extend(roots);
+        for root in roots {
+            let canonical = canonical_nearest(&root).unwrap_or_else(|_| root.clone());
+            self.projects.push((root, canonical));
+        }
         self
     }
 
@@ -216,18 +219,42 @@ impl Roots {
             .with_projects(project_roots()))
     }
 
-    fn project_ok(&self, p: &Path) -> bool {
+    /// `p` is in a project's allowed set, judged against the given root paths.
+    fn project_lexical_ok(&self, p: &Path) -> bool {
         self.projects
             .iter()
-            .any(|root| p.strip_prefix(root).is_ok_and(project_rel_ok))
+            .any(|(root, _)| p.strip_prefix(root).is_ok_and(project_rel_ok))
+    }
+
+    /// `p` is in a project's allowed set, judged against the canonical roots.
+    fn project_canonical_ok(&self, p: &Path) -> bool {
+        self.projects
+            .iter()
+            .any(|(_, root)| p.strip_prefix(root).is_ok_and(project_rel_ok))
+    }
+
+    /// Lexically one of the fixed roots (`~/.claude`, `~/.claude.json`, app data).
+    /// These keep their own rules even when home is also a project root.
+    fn fixed_lexical(&self, p: &Path) -> bool {
+        p.starts_with(&self.claude_dir) || p == self.claude_json || p.starts_with(&self.app_data)
+    }
+
+    /// Project rule for a path reached through a project root: the resolved
+    /// `target` must stay inside the canonical form of a root that `lexical`
+    /// matched. Reads may land anywhere inside that root; writes must land in
+    /// its allowed set.
+    fn project_target_ok(&self, lexical: &Path, target: &Path, access: Access) -> bool {
+        self.projects.iter().any(|(root, c_root)| {
+            lexical.strip_prefix(root).is_ok_and(project_rel_ok)
+                && match access {
+                    Access::Read => target.starts_with(c_root),
+                    Access::Write => target.strip_prefix(c_root).is_ok_and(project_rel_ok),
+                }
+        })
     }
 
     fn lexical_ok(&self, p: &Path) -> bool {
-        p != self.credentials
-            && (p.starts_with(&self.claude_dir)
-                || p == self.claude_json
-                || p.starts_with(&self.app_data)
-                || self.project_ok(p))
+        p != self.credentials && (self.fixed_lexical(p) || self.project_lexical_ok(p))
     }
 
     fn canonical_ok(&self, p: &Path) -> bool {
@@ -235,7 +262,7 @@ impl Roots {
             && (p.starts_with(&self.c_claude_dir)
                 || p == self.c_claude_json
                 || p.starts_with(&self.c_app_data)
-                || self.project_ok(p))
+                || self.project_canonical_ok(p))
     }
 
     pub fn is_claude_json(&self, canonical: &Path) -> bool {
@@ -259,9 +286,13 @@ impl Roots {
         if canonical == self.c_credentials {
             return Err(denied());
         }
-        let ok = self.canonical_ok(&canonical)
-            || (access == Access::Read
-                && (lexical.starts_with(&self.claude_dir) || self.project_ok(&lexical)));
+        let ok = if self.fixed_lexical(&lexical) {
+            // ~/.claude reads may follow symlinks out (Omarchy skills).
+            self.canonical_ok(&canonical)
+                || (access == Access::Read && lexical.starts_with(&self.claude_dir))
+        } else {
+            self.project_target_ok(&lexical, &canonical, access)
+        };
         if ok {
             Ok((lexical, canonical))
         } else {
@@ -285,7 +316,13 @@ impl Roots {
         let target = canonical_nearest(parent)
             .map_err(|e| format!("cannot resolve {path}: {e}"))?
             .join(name);
-        if self.canonical_ok(&target) {
+        let ok = if self.fixed_lexical(&lexical) {
+            self.canonical_ok(&target)
+        } else {
+            // The link itself must live inside the same project root.
+            self.project_target_ok(&lexical, &target, Access::Write)
+        };
+        if ok && target != self.c_credentials {
             Ok(target)
         } else {
             Err(denied())
@@ -777,30 +814,179 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn project_symlinks_follow_for_reads_only() {
+    fn project_symlinks_must_stay_inside_the_root() {
+        use std::os::unix::fs::symlink;
         let (f, proj, roots) = project_fixture();
+        let h = f.home.to_string_lossy().to_string();
+        let p = proj.to_string_lossy().to_string();
+
+        // Outside targets: a file, a folder, ~/.claude.json, ~/.ssh, credentials.
         let outside = f.home.join("shared-agents");
         fs::create_dir_all(&outside).unwrap();
         fs::write(outside.join("a.md"), "hi").unwrap();
-        std::os::unix::fs::symlink(&outside, proj.join(".claude/linked")).unwrap();
-        std::os::unix::fs::symlink(proj.join("src/main.rs"), proj.join("CLAUDE.local.md")).unwrap();
-        std::os::unix::fs::symlink(
+        symlink(outside.join("a.md"), proj.join(".claude/agents/out.md")).unwrap();
+        symlink(&outside, proj.join(".claude/linked")).unwrap();
+        symlink(f.home.join(".claude.json"), proj.join(".mcp.json")).unwrap();
+        symlink(f.home.join(".ssh/id"), proj.join("CLAUDE.md")).unwrap();
+        symlink(
             f.home.join(".claude/.credentials.json"),
             proj.join(".claude/creds"),
         )
         .unwrap();
-        let p = proj.to_string_lossy().to_string();
-        let linked = format!("{p}/.claude/linked/a.md");
-        assert!(roots.resolve(&f.home, &linked, Access::Read).is_ok());
-        assert!(roots.resolve(&f.home, &linked, Access::Write).is_err());
-        let local = format!("{p}/CLAUDE.local.md");
-        assert!(roots.resolve(&f.home, &local, Access::Read).is_ok());
-        assert!(roots.resolve(&f.home, &local, Access::Write).is_err());
-        // Deleting the link itself is fine; the target is not touched.
-        assert!(roots.resolve_no_follow(&f.home, &local).is_ok());
+        for rel in [
+            ".claude/agents/out.md",
+            ".claude/linked",
+            ".claude/linked/a.md",
+            ".mcp.json",
+            "CLAUDE.md",
+            ".claude/creds",
+        ] {
+            let path = format!("{p}/{rel}");
+            // fs_read_text, fs_list and fs_exists all go through resolve(Read).
+            let err = roots.resolve(&f.home, &path, Access::Read).unwrap_err();
+            assert!(err.starts_with("path not allowed"), "{rel}: {err}");
+            assert!(
+                roots.resolve(&f.home, &path, Access::Write).is_err(),
+                "{rel}"
+            );
+        }
+        // The links themselves live inside the root, so they can be deleted.
+        for rel in [
+            ".claude/agents/out.md",
+            ".mcp.json",
+            "CLAUDE.md",
+            ".claude/linked",
+        ] {
+            let target = roots
+                .resolve_no_follow(&f.home, &format!("{p}/{rel}"))
+                .unwrap();
+            assert_eq!(target, proj.join(rel));
+        }
+
+        // Inside targets are fine: reads anywhere in the root, writes only in the set.
+        fs::create_dir_all(proj.join(".claude/shared")).unwrap();
+        fs::write(proj.join(".claude/shared/b.md"), "b").unwrap();
+        symlink(
+            proj.join(".claude/shared/b.md"),
+            proj.join(".claude/agents/in.md"),
+        )
+        .unwrap();
+        symlink(proj.join("src/main.rs"), proj.join("CLAUDE.local.md")).unwrap();
+        symlink(proj.join(".claude/shared"), proj.join(".claude/skills")).unwrap();
+        for rel in [
+            ".claude/agents/in.md",
+            "CLAUDE.local.md",
+            ".claude/skills",
+            ".claude/skills/b.md",
+        ] {
+            assert!(
+                roots
+                    .resolve(&f.home, &format!("{p}/{rel}"), Access::Read)
+                    .is_ok(),
+                "{rel}"
+            );
+        }
         assert!(
             roots
-                .resolve(&f.home, &format!("{p}/.claude/creds"), Access::Read)
+                .resolve(&f.home, &format!("{p}/.claude/agents/in.md"), Access::Write)
+                .is_ok()
+        );
+        assert!(
+            roots
+                .resolve(&f.home, &format!("{p}/CLAUDE.local.md"), Access::Write)
+                .is_err()
+        );
+
+        // A link outside the root (but inside the allowlist) cannot be deleted
+        // through a project path that leaves the root.
+        symlink(f.home.join(".claude"), proj.join(".claude/up")).unwrap();
+        assert!(
+            roots
+                .resolve_no_follow(&f.home, &format!("{p}/.claude/up/settings.json"))
+                .is_err()
+        );
+        // ~/.claude itself is untouched by the project rules.
+        assert!(
+            roots
+                .resolve(
+                    &f.home,
+                    &format!("{h}/.claude/settings.json"),
+                    Access::Write
+                )
+                .is_ok()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn home_as_root_keeps_claude_dir_rules() {
+        use std::os::unix::fs::symlink;
+        let f = fixture();
+        let h = f.home.to_string_lossy().to_string();
+        let roots = Roots::new(&f.home, &f.home.join(".local/share/tsukue"))
+            .unwrap()
+            .with_projects([f.home.clone()]);
+        // Omarchy-style skill linked in from outside home.
+        let omarchy = f
+            .home
+            .parent()
+            .unwrap()
+            .join("usr-share-omarchy/skills/omarchy");
+        fs::create_dir_all(&omarchy).unwrap();
+        fs::write(omarchy.join("SKILL.md"), "skill").unwrap();
+        symlink(&omarchy, f.home.join(".claude/skills/omarchy")).unwrap();
+        for rel in [".claude/skills/omarchy", ".claude/skills/omarchy/SKILL.md"] {
+            assert!(
+                roots
+                    .resolve(&f.home, &format!("{h}/{rel}"), Access::Read)
+                    .is_ok(),
+                "{rel}"
+            );
+        }
+        assert!(
+            roots
+                .resolve(
+                    &f.home,
+                    &format!("{h}/.claude/skills/omarchy/SKILL.md"),
+                    Access::Write
+                )
+                .is_err()
+        );
+        assert!(
+            roots
+                .resolve(
+                    &f.home,
+                    &format!("{h}/.claude/.credentials.json"),
+                    Access::Read
+                )
+                .is_err()
+        );
+        assert!(
+            roots
+                .resolve(&f.home, &format!("{h}/.claude.json"), Access::Write)
+                .is_ok()
+        );
+        // Home's own project files still use the strict rule.
+        symlink(f.home.join("AGENTS.md"), f.home.join("CLAUDE.local.md")).unwrap();
+        fs::write(f.home.join("AGENTS.md"), "# agents").unwrap();
+        fs::write(f.home.join("CLAUDE.md"), "# home").unwrap();
+        assert!(
+            roots
+                .resolve(&f.home, &format!("{h}/CLAUDE.md"), Access::Write)
+                .is_ok()
+        );
+        assert!(
+            roots
+                .resolve(&f.home, &format!("{h}/CLAUDE.local.md"), Access::Read)
+                .is_ok()
+        );
+        let outside = f.home.parent().unwrap().join("elsewhere.md");
+        fs::write(&outside, "x").unwrap();
+        fs::remove_file(f.home.join("CLAUDE.local.md")).unwrap();
+        symlink(&outside, f.home.join("CLAUDE.local.md")).unwrap();
+        assert!(
+            roots
+                .resolve(&f.home, &format!("{h}/CLAUDE.local.md"), Access::Read)
                 .is_err()
         );
     }
