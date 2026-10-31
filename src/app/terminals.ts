@@ -169,6 +169,24 @@ function ensureEntry(key: string): Entry {
  * opens in an offscreen staging box sized like the visible terminal area, is
  * fitted and spawned there, and only then moves into its container.
  */
+/** requestAnimationFrame that still fires when the window gets no frame
+ * callbacks (Wayland surfaces on another workspace never paint). */
+function nextFrame(cb: () => void): number {
+  let done = false;
+  const run = () => {
+    if (done) return;
+    done = true;
+    cb();
+  };
+  const id = requestAnimationFrame(run);
+  setTimeout(run, 120);
+  return id;
+}
+
+export function getEntry(key: string) {
+  return entries.get(key);
+}
+
 export function attachTerminal(key: string, container: HTMLElement) {
   const e = ensureEntry(key);
   e.container = container;
@@ -215,7 +233,7 @@ export function attachTerminal(key: string, container: HTMLElement) {
 
   // Measure first, then spawn with the fitted size.
   const start = () =>
-    requestAnimationFrame(() => {
+    nextFrame(() => {
       if (!entries.has(key)) return;
       fitTerminal(key);
       if (e.staging) {
@@ -266,7 +284,7 @@ export function fitTerminal(key: string): Dims | null {
 export function scheduleFit(key: string) {
   const e = entries.get(key);
   if (!e || e.fitFrame != null) return;
-  e.fitFrame = requestAnimationFrame(() => {
+  e.fitFrame = nextFrame(() => {
     e.fitFrame = null;
     fitTerminal(key);
   });

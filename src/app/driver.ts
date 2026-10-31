@@ -3,6 +3,9 @@
 // socket; the code runs as an async function body with `t` bound to the
 // helpers below and the JSON result is handed back through driver_result.
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { pty, files, memory, mcp } from "../lib/ipc";
+import * as terminals from "./terminals";
 import * as tabs from "./tabs";
 import { store } from "./store";
 import { prefsAtom, savePrefs, setPrefs } from "./prefs";
@@ -28,6 +31,9 @@ export function installDriver() {
     toastsAtom,
     dismissOverlay,
     invoke,
+    listen,
+    ipc: { pty, files, memory, mcp },
+    terminals,
     /** querySelector that throws a readable error when nothing matches. */
     q(sel: string): HTMLElement {
       const el = document.querySelector<HTMLElement>(sel);
