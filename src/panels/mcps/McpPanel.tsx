@@ -5,7 +5,9 @@ import { Badge, Button, Field, IconButton, Select, TextArea, TextInput, cx } fro
 import { CodeEditor } from "../shared/CodeEditor";
 import { errText, useLoad, usePaths, useToast } from "../shared/hooks";
 import { ConfirmBar, EmptyState, Note, Panel, Row, SectionHeader } from "../shared/list";
-import { basename, tildify } from "../shared/paths";
+import { basename, joinPath, tildify } from "../shared/paths";
+import { ScopeSwitch, useScope } from "../shared/ScopeSwitch";
+import { refreshProject } from "../../app/project";
 import { configFromForm, emptyForm, formFromConfig, summaryOf, transportOf, type McpForm } from "./model";
 
 const keyOf = (s: { scope: string; project?: string; name: string }) => `${s.scope}|${s.project ?? ""}|${s.name}`;
@@ -36,8 +38,22 @@ function maskedRaw(raw: string): string {
 
 export function McpPanel() {
   const paths = usePaths();
-  const servers = useLoad(useCallback(() => mcp.list(), []), []);
+  const { scope, choice, setScope, project } = useScope();
+  const projectRoot = scope === "project" ? (project?.root ?? null) : null;
+  const servers = useLoad(
+    useCallback(() => mcp.list(projectRoot ?? undefined), [projectRoot]),
+    [projectRoot],
+  );
   const [editing, setEditing] = useState<string | null>(null); // key, or "new"
+
+  const fileServers = useMemo(
+    () => (projectRoot ? (servers.data ?? []).filter((s) => s.scope === "projectFile").sort((a, b) => a.name.localeCompare(b.name)) : []),
+    [servers.data, projectRoot],
+  );
+  const claudeJsonForRoot = useMemo(
+    () => (projectRoot ? (servers.data ?? []).filter((s) => s.scope === "project" && s.project === projectRoot).length : 0),
+    [servers.data, projectRoot],
+  );
 
   const groups = useMemo(() => {
     const list = servers.data ?? [];
@@ -58,7 +74,11 @@ export function McpPanel() {
   const done = () => {
     setEditing(null);
     void servers.reload();
+    if (projectRoot) void refreshProject();
   };
+
+  const mcpJsonShown = projectRoot ? tildify(joinPath(projectRoot, ".mcp.json"), paths?.home) : "";
+  const fixed = projectRoot ? { root: projectRoot, shown: mcpJsonShown } : undefined;
 
   return (
     <Panel
@@ -67,53 +87,116 @@ export function McpPanel() {
       onRefresh={() => void servers.reload()}
       actions={<IconButton icon={Plus} title="Add server" onClick={() => setEditing("new")} />}
     >
-      {editing === "new" && <McpEditor key="new" projectPaths={projectPaths} onDone={done} onCancel={() => setEditing(null)} />}
-      {servers.data && servers.data.length === 0 && editing !== "new" && (
-        <EmptyState title="No MCP servers">Servers from ~/.claude.json show here, user scope first, then per project. Use + to add one.</EmptyState>
-      )}
-      {groups.map((g) =>
-        g.servers.length === 0 ? null : (
-          <div key={g.title}>
-            <SectionHeader title={g.project ? basename(g.project) || g.project : "User"} count={g.servers.length} />
-            {g.project && (
-              <div className="truncate px-3 pb-1 font-mono text-[11px] text-fg-muted" title={g.project}>
-                {tildify(g.project, paths?.home)}
+      <ScopeSwitch
+        value={choice}
+        project={project}
+        onChange={(s) => {
+          setScope(s);
+          setEditing(null);
+        }}
+      />
+      {projectRoot ? (
+        <>
+          {editing === "new" && <McpEditor key="new" fixed={fixed} projectPaths={[]} onDone={done} onCancel={() => setEditing(null)} />}
+          {servers.data && fileServers.length === 0 && editing !== "new" && (
+            <EmptyState title="No project servers">
+              <span className="font-mono">{mcpJsonShown}</span> {project?.exists.mcpJson ? "has no servers yet." : "does not exist yet."} Use + to add one; it is created on first save.
+            </EmptyState>
+          )}
+          {fileServers.length > 0 && <SectionHeader title=".mcp.json" count={fileServers.length} />}
+          {fileServers.map((s) => {
+            const k = keyOf(s);
+            const open = editing === k;
+            return (
+              <div key={k}>
+                <Row
+                  title={s.name}
+                  badge={<Badge tone={transportOf(s.config) === "stdio" ? "muted" : "accent"}>{transportOf(s.config)}</Badge>}
+                  subtitle={<span className="font-mono">{summaryOf(s.config)}</span>}
+                  tooltip={summaryOf(s.config)}
+                  active={open}
+                  onClick={() => setEditing(open ? null : k)}
+                />
+                {open && <McpEditor server={s} fixed={fixed} projectPaths={[]} onDone={done} onCancel={() => setEditing(null)} />}
               </div>
-            )}
-            {g.servers.map((s) => {
-              const k = keyOf(s);
-              const open = editing === k;
-              return (
-                <div key={k}>
-                  <Row
-                    title={s.name}
-                    badge={<Badge tone={transportOf(s.config) === "stdio" ? "muted" : "accent"}>{transportOf(s.config)}</Badge>}
-                    subtitle={<span className="font-mono">{summaryOf(s.config)}</span>}
-                    tooltip={summaryOf(s.config)}
-                    active={open}
-                    onClick={() => setEditing(open ? null : k)}
-                  />
-                  {open && <McpEditor server={s} projectPaths={projectPaths} onDone={done} onCancel={() => setEditing(null)} />}
-                </div>
-              );
-            })}
-          </div>
-        ),
+            );
+          })}
+          <Note className="pt-3">
+            Servers shared through the repo's .mcp.json. Claude Code asks before it starts them the first time.
+            {claudeJsonForRoot > 0
+              ? ` ${claudeJsonForRoot} more for this path ${claudeJsonForRoot === 1 ? "is" : "are"} stored in ~/.claude.json and listed under User > ${basename(projectRoot) || projectRoot}.`
+              : " Entries for this path in ~/.claude.json, if any, are listed under User > " + (basename(projectRoot) || projectRoot) + "."}
+          </Note>
+          <div className="h-3" />
+        </>
+      ) : (
+        <>
+          {editing === "new" && <McpEditor key="new" projectPaths={projectPaths} onDone={done} onCancel={() => setEditing(null)} />}
+          {servers.data && servers.data.length === 0 && editing !== "new" && (
+            <EmptyState title="No MCP servers">Servers from ~/.claude.json show here, user scope first, then per project. Use + to add one.</EmptyState>
+          )}
+          {groups.map((g) =>
+            g.servers.length === 0 ? null : (
+              <div key={g.title}>
+                <SectionHeader title={g.project ? basename(g.project) || g.project : "User"} count={g.servers.length} />
+                {g.project && (
+                  <div className="truncate px-3 pb-1 font-mono text-[11px] text-fg-muted" title={g.project}>
+                    {tildify(g.project, paths?.home)}
+                  </div>
+                )}
+                {g.servers.map((s) => {
+                  const k = keyOf(s);
+                  const open = editing === k;
+                  return (
+                    <div key={k}>
+                      <Row
+                        title={s.name}
+                        badge={<Badge tone={transportOf(s.config) === "stdio" ? "muted" : "accent"}>{transportOf(s.config)}</Badge>}
+                        subtitle={<span className="font-mono">{summaryOf(s.config)}</span>}
+                        tooltip={summaryOf(s.config)}
+                        active={open}
+                        onClick={() => setEditing(open ? null : k)}
+                      />
+                      {open && <McpEditor server={s} projectPaths={projectPaths} onDone={done} onCancel={() => setEditing(null)} />}
+                    </div>
+                  );
+                })}
+              </div>
+            ),
+          )}
+          <Note className="pt-3">
+            Reads and writes the mcpServers blocks of ~/.claude.json. Servers in a repo's .mcp.json are under the Project scope. A backup is kept at
+            ~/.claude.json.tsukue-bak.
+          </Note>
+          <div className="h-3" />
+        </>
       )}
-      <Note className="pt-3">
-        Reads and writes the mcpServers blocks of ~/.claude.json only. Servers declared in a repo's .mcp.json are not listed. A backup is kept at
-        ~/.claude.json.tsukue-bak.
-      </Note>
-      <div className="h-3" />
     </Panel>
   );
 }
 
-function McpEditor({ server, projectPaths, onDone, onCancel }: { server?: McpServer; projectPaths: string[]; onDone: () => void; onCancel: () => void }) {
+function McpEditor({
+  server,
+  fixed,
+  projectPaths,
+  onDone,
+  onCancel,
+}: {
+  server?: McpServer;
+  /** Project scope: always saves to <root>/.mcp.json (scope projectFile). */
+  fixed?: { root: string; shown: string };
+  projectPaths: string[];
+  onDone: () => void;
+  onCancel: () => void;
+}) {
   const toast = useToast();
   const original = server?.config ?? {};
   const [form, setForm] = useState<McpForm>(() =>
-    server ? formFromConfig(server.name, server.scope, server.project ?? "", server.config) : emptyForm(),
+    server
+      ? formFromConfig(server.name, server.scope, server.project ?? "", server.config)
+      : fixed
+        ? { ...emptyForm(), scope: "projectFile", project: fixed.root }
+        : emptyForm(),
   );
   const [extra, setExtra] = useState<Record<string, unknown>>(original);
   const [raw, setRaw] = useState<string | null>(null);
@@ -169,8 +252,8 @@ function McpEditor({ server, projectPaths, onDone, onCancel }: { server?: McpSer
     const name = form.name.trim();
     if (!name) return setError("Name is required");
     if (name !== server?.name && !/^[A-Za-z0-9_.-]+$/.test(name)) return setError("Name may use letters, digits, dot, dash and underscore");
-    if (form.scope === "project" && !form.project.trim()) return setError("Project path is required for project scope");
-    const project = form.scope === "project" ? form.project.trim() : undefined;
+    if (form.scope !== "user" && !form.project.trim()) return setError("Project path is required for project scope");
+    const project = form.scope !== "user" ? form.project.trim() : undefined;
     setError(null);
     setBusy(true);
     try {
@@ -222,12 +305,20 @@ function McpEditor({ server, projectPaths, onDone, onCancel }: { server?: McpSer
         <TextInput value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="my-server" autoFocus={!server} />
       </Field>
       <div className="grid grid-cols-2 gap-2">
-        <Field label="Scope">
-          <Select value={form.scope} onChange={(e) => set("scope", e.target.value as McpForm["scope"])}>
-            <option value="user">user</option>
-            <option value="project">project</option>
-          </Select>
-        </Field>
+        {fixed ? (
+          <Field label="Saved to">
+            <span className="truncate py-1 font-mono text-xs text-fg-muted" title={fixed.root + "/.mcp.json"}>
+              {fixed.shown}
+            </span>
+          </Field>
+        ) : (
+          <Field label="Scope">
+            <Select value={form.scope} onChange={(e) => set("scope", e.target.value as McpForm["scope"])}>
+              <option value="user">user</option>
+              <option value="project">project</option>
+            </Select>
+          </Field>
+        )}
         {raw === null && (
           <Field label="Type">
             <Select value={form.type} onChange={(e) => set("type", e.target.value as McpForm["type"])}>
@@ -294,7 +385,17 @@ function McpEditor({ server, projectPaths, onDone, onCancel }: { server?: McpSer
       {error && <div className="text-[11px] text-danger">{error}</div>}
 
       {confirmRemove ? (
-        <ConfirmBar text={<>Remove <span className="font-mono">{server?.name}</span> from ~/.claude.json?</>} confirmLabel="Remove" busy={busy} onConfirm={() => void remove()} onCancel={() => setConfirmRemove(false)} />
+        <ConfirmBar
+          text={
+            <>
+              Remove <span className="font-mono">{server?.name}</span> from {server?.scope === "projectFile" ? ".mcp.json" : "~/.claude.json"}?
+            </>
+          }
+          confirmLabel="Remove"
+          busy={busy}
+          onConfirm={() => void remove()}
+          onCancel={() => setConfirmRemove(false)}
+        />
       ) : (
         <div className="flex items-center gap-1.5">
           {server && (

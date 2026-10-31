@@ -33,6 +33,7 @@ pub fn run() {
             files::fs_list,
             files::fs_exists,
             files::fs_mkdir,
+            files::project_root,
             memory::memory_projects,
             mcp::mcp_list,
             mcp::mcp_upsert,

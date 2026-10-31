@@ -1,6 +1,8 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAtomValue } from "jotai";
 import { BookOpen, Plus, Trash } from "lucide-react";
 import { files, memory, type MemoryProject } from "../../lib/ipc";
+import { projectAtom } from "../../app/project";
 import { Button, IconButton, Select } from "../ui";
 import { useOpenEditorTracked } from "../shared/EditorSheet";
 import { getPaths, useLoad, usePaths, useToast } from "../shared/hooks";
@@ -23,6 +25,8 @@ function compareProjects(a: MemoryProject, b: MemoryProject, home?: string): num
   return ra - rb || projectLabel(a, home).localeCompare(projectLabel(b, home));
 }
 
+const samePath = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+
 function memoryTemplate(slug: string): string {
   return `---
 name: ${slug}
@@ -44,7 +48,10 @@ export function MemoryPanel() {
   const paths = usePaths();
   const toast = useToast();
   const { openEditor, openPath } = useOpenEditorTracked();
+  const activeProject = useAtomValue(projectAtom);
   const [selected, setSelected] = useState<string | null>(null);
+  /** Set once the user picks a project; until then the selection follows the active tab. */
+  const [manual, setManual] = useState(false);
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -61,6 +68,16 @@ export function MemoryPanel() {
     }, []),
     [],
   );
+
+  // Follow the active tab's project root (falling back to home) until a manual pick.
+  const activeRoot = activeProject?.root ?? null;
+  const home = paths?.home ?? null;
+  useEffect(() => {
+    if (manual || !projects.data) return;
+    const list = projects.data;
+    const target = list.find((x) => samePath(x.guessedPath, activeRoot)) ?? list.find((x) => samePath(x.guessedPath, home));
+    if (target) setSelected(target.encoded);
+  }, [manual, projects.data, activeRoot, home]);
 
   const project = projects.data?.find((p) => p.encoded === selected) ?? null;
 
@@ -136,7 +153,10 @@ export function MemoryPanel() {
       <div className="flex flex-col gap-2 px-3 pt-3">
         <Select
           value={selected ?? ""}
-          onChange={(e) => setSelected(e.target.value || null)}
+          onChange={(e) => {
+            setManual(true);
+            setSelected(e.target.value || null);
+          }}
           title={project?.guessedPath ?? project?.encoded ?? ""}
           aria-label="Project"
         >

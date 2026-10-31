@@ -4,7 +4,8 @@
 // helpers below and the JSON result is handed back through driver_result.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { pty, files, memory, mcp } from "../lib/ipc";
+import { pty, files, memory, mcp, project as projectIpc } from "../lib/ipc";
+import { projectAtom, refreshProject } from "./project";
 import * as terminals from "./terminals";
 import * as tabs from "./tabs";
 import { store } from "./store";
@@ -32,7 +33,8 @@ export function installDriver() {
     dismissOverlay,
     invoke,
     listen,
-    ipc: { pty, files, memory, mcp },
+    ipc: { pty, files, memory, mcp, project: projectIpc },
+    project: { projectAtom, refreshProject },
     terminals,
     /** querySelector that throws a readable error when nothing matches. */
     q(sel: string): HTMLElement {

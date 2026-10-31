@@ -2,13 +2,19 @@ import { useCallback, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, FileText, Plus, Trash, Undo2 } from "lucide-react";
 import { Badge, Button, IconButton, TextArea, TextInput, cx } from "../ui";
 import { useOpenEditor } from "../shared/EditorSheet";
-import { getPaths, readJsonObject, useLoad, useToast, writeJson } from "../shared/hooks";
+import { getPaths, readJsonObject, useLoad, usePaths, useToast, writeJson } from "../shared/hooks";
 import { ConfirmBar, Note, Panel } from "../shared/list";
+import { joinPath, tildify } from "../shared/paths";
+import { ScopeSwitch, useScope } from "../shared/ScopeSwitch";
+import { refreshProject } from "../../app/project";
 import { EVENTS, EVENT_INFO, applyHooks, readHooks, sameHooks, type HookEntry, type HooksMap, type MatcherGroup } from "./model";
 
 export function HooksPanel() {
   const toast = useToast();
   const openEditor = useOpenEditor();
+  const paths = usePaths();
+  const { scope, choice, setScope, project } = useScope();
+  const projectRoot = scope === "project" ? (project?.root ?? null) : null;
   const [draft, setDraft] = useState<HooksMap | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -17,8 +23,8 @@ export function HooksPanel() {
 
   const loaded = useLoad(
     useCallback(async () => {
-      const p = await getPaths();
-      const settings = await readJsonObject(p.settings);
+      const path = projectRoot ? joinPath(projectRoot, ".claude", "settings.json") : (await getPaths()).settings;
+      const settings = await readJsonObject(path);
       let hooks: HooksMap = {};
       try {
         hooks = readHooks(settings.hooks);
@@ -33,10 +39,11 @@ export function HooksPanel() {
         for (const k of Object.keys(hooks)) if (next[k] === undefined) next[k] = true;
         return next;
       });
-      return { path: p.settings, hooks, rawHooks: JSON.stringify(settings.hooks ?? null) };
-    }, []),
-    [],
+      return { path, hooks, rawHooks: JSON.stringify(settings.hooks ?? null) };
+    }, [projectRoot]),
+    [projectRoot],
   );
+  const shownPath = loaded.data ? tildify(loaded.data.path, paths?.home) : projectRoot ? "<project>/.claude/settings.json" : "~/.claude/settings.json";
 
   const dirty = !!draft && !!loaded.data && !sameHooks(draft, loaded.data.hooks);
   const events = useMemo(() => [...EVENTS, ...Object.keys(draft ?? {}).filter((k) => !(EVENTS as readonly string[]).includes(k))], [draft]);
@@ -53,9 +60,11 @@ export function HooksPanel() {
         setConflict(true);
         return;
       }
+      // A missing file reads as {}, so a first save creates it with just the hooks.
       await writeJson(loaded.data.path, applyHooks(fresh, draft));
       toast.info("Saved hooks to settings.json");
       await loaded.reload();
+      if (projectRoot) void refreshProject();
     } catch (e) {
       toast.error(e, "Save failed");
     } finally {
@@ -69,7 +78,14 @@ export function HooksPanel() {
       toast.error("Save or revert the hook changes before editing settings.json raw");
       return;
     }
-    openEditor({ path: loaded.data.path, create: "{}\n", onSaved: () => void loaded.reload() });
+    openEditor({
+      path: loaded.data.path,
+      create: "{}\n",
+      onSaved: () => {
+        void loaded.reload();
+        if (projectRoot) void refreshProject();
+      },
+    });
   };
 
   return (
@@ -82,6 +98,18 @@ export function HooksPanel() {
       }}
       actions={<IconButton icon={FileText} title="Open settings.json raw" onClick={openRaw} disabled={!loaded.data} />}
     >
+      <ScopeSwitch
+        value={choice}
+        project={project}
+        onChange={(s) => {
+          if (s === choice) return;
+          if (dirty) {
+            toast.error("Unsaved hook changes: save or revert first");
+            return;
+          }
+          setScope(s);
+        }}
+      />
       {dirty && !conflict && (
         <div className="sticky top-0 z-20 flex items-center gap-1.5 border-b border-border bg-bg-raised px-3 py-1.5">
           <span className="flex-1 text-[11px] text-warn">Unsaved changes</span>
@@ -110,7 +138,10 @@ export function HooksPanel() {
           {loadError}
         </div>
       )}
-      <Note className="pt-2">Command hooks from ~/.claude/settings.json. Each runs a shell command with the event JSON on stdin; timeout is in seconds.</Note>
+      <Note className="pt-2">
+        Command hooks from <span className="font-mono">{shownPath}</span>
+        {projectRoot && project && !project.exists.settings ? " (created on first save)" : ""}. Each runs a shell command with the event JSON on stdin; timeout is in seconds.
+      </Note>
 
       {draft &&
         !loadError &&

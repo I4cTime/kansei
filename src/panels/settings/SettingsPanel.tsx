@@ -2,10 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { useAtomValue } from "jotai";
 import { FileText } from "lucide-react";
 import { prefsAtom, savePrefs, type Prefs } from "../../app/prefs";
-import { Button, Field, Select, TextInput, Toggle, cx } from "../ui";
+import { refreshProject } from "../../app/project";
+import type { ProjectInfo } from "../../lib/ipc";
+import { Badge, Button, Field, Select, TextInput, Toggle, cx } from "../ui";
 import { useOpenEditor } from "../shared/EditorSheet";
 import { getPaths, readJsonObject, useLoad, useToast, writeJson } from "../shared/hooks";
 import { Note, Panel, SectionHeader } from "../shared/list";
+import { basename, joinPath } from "../shared/paths";
+import { ScopeSwitch, useScope } from "../shared/ScopeSwitch";
 
 type Tab = "claude" | "app";
 
@@ -38,8 +42,68 @@ export function SettingsPanel() {
           </button>
         ))}
       </div>
-      {tab === "claude" ? <ClaudeSettings key={reloadKey} /> : <AppSettings />}
+      {tab === "claude" ? <ClaudeScoped reloadKey={reloadKey} /> : <AppSettings />}
     </Panel>
+  );
+}
+
+function ClaudeScoped({ reloadKey }: { reloadKey: number }) {
+  const { scope, choice, setScope, project } = useScope();
+  return (
+    <>
+      <ScopeSwitch value={choice} project={project} onChange={setScope} />
+      {scope === "project" && project ? <ProjectSettings key={reloadKey} project={project} /> : <ClaudeSettings key={reloadKey} />}
+    </>
+  );
+}
+
+function ProjectSettings({ project }: { project: ProjectInfo }) {
+  const openEditor = useOpenEditor();
+  useEffect(() => {
+    void refreshProject();
+  }, []);
+  const name = basename(project.root) || project.root;
+  const rows: { label: string; rel: string; exists: boolean; create: string; note?: string }[] = [
+    { label: "CLAUDE.md", rel: "CLAUDE.md", exists: project.exists.claudeMd, create: `# ${name}\n\n`, note: "Shared project instructions, usually checked in." },
+    {
+      label: "CLAUDE.local.md",
+      rel: "CLAUDE.local.md",
+      exists: project.exists.claudeLocalMd,
+      create: `# ${name} (local)\n\n`,
+      note: "Your private instructions for this project. Keep it out of git.",
+    },
+    { label: ".claude/settings.json", rel: ".claude/settings.json", exists: project.exists.settings, create: "{}\n", note: "Shared project settings, usually checked in." },
+    {
+      label: ".claude/settings.local.json",
+      rel: ".claude/settings.local.json",
+      exists: project.exists.settingsLocal,
+      create: "{}\n",
+      note: "Your private settings for this project. Keep it out of git.",
+    },
+  ];
+  return (
+    <div className="flex flex-col">
+      <SectionHeader title="Project files" />
+      <div className="flex flex-col gap-1.5 px-3 py-1">
+        {rows.map((r) => {
+          const path = joinPath(project.root, r.rel);
+          return (
+            <Button
+              key={r.rel}
+              icon={FileText}
+              title={path}
+              className="min-w-0"
+              onClick={() => openEditor({ path, title: r.label, create: r.create, note: r.note, onSaved: () => void refreshProject() })}
+            >
+              <span className="min-w-0 flex-1 truncate text-left">{r.label}</span>
+              {!r.exists && <Badge>missing</Badge>}
+            </Button>
+          );
+        })}
+      </div>
+      <Note>Missing files open with a starter and are created on first save.</Note>
+      <div className="h-3" />
+    </div>
   );
 }
 

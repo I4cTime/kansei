@@ -2,11 +2,13 @@ import { useCallback, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { files } from "../../lib/ipc";
 import { IconButton } from "../ui";
+import { refreshProject } from "../../app/project";
 import { useOpenEditor } from "../shared/EditorSheet";
-import { getPaths, useLoad } from "../shared/hooks";
+import { getPaths, useLoad, usePaths, useToast } from "../shared/hooks";
 import { listDir, matches, readDoc, type Doc } from "../shared/docs";
 import { EmptyState, InlinePrompt, Note, Panel, Row, SearchInput, SectionHeader } from "../shared/list";
-import { joinPath, slugify } from "../shared/paths";
+import { joinPath, slugify, tildify } from "../shared/paths";
+import { ScopeSwitch, useScope } from "../shared/ScopeSwitch";
 
 type Skill = Doc & { dirName: string };
 
@@ -41,29 +43,47 @@ async function loadSkills(dir: string): Promise<Skill[]> {
 
 export function SkillsPanel() {
   const openEditor = useOpenEditor();
+  const toast = useToast();
+  const paths = usePaths();
+  const { scope, choice, setScope, project } = useScope();
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
+  const projectRoot = scope === "project" ? (project?.root ?? null) : null;
 
   const skills = useLoad(
     useCallback(async () => {
-      const p = await getPaths();
-      return { dir: p.skillsDir, list: await loadSkills(p.skillsDir) };
-    }, []),
-    [],
+      const dir = projectRoot ? joinPath(projectRoot, ".claude", "skills") : (await getPaths()).skillsDir;
+      const exists = await files.exists(dir);
+      return { dir, exists, list: exists ? await loadSkills(dir) : [] };
+    }, [projectRoot]),
+    [projectRoot],
   );
+  const dirShown = skills.data ? tildify(skills.data.dir, paths?.home) : projectRoot ? "<project>/.claude/skills" : "~/.claude/skills";
 
   const shown = useMemo(() => (skills.data?.list ?? []).filter((s) => matches(q, s.meta.name, s.meta.description, s.dirName)), [skills.data, q]);
   const total = skills.data?.list.length ?? 0;
 
-  const create = (raw: string) => {
+  const create = async (raw: string) => {
     if (!skills.data) return;
+    const { dir } = skills.data;
     const slug = slugify(raw);
     setCreating(false);
+    if (projectRoot) {
+      try {
+        await files.mkdir(joinPath(dir, slug));
+      } catch (e) {
+        toast.error(e, "Could not create the skill folder");
+        return;
+      }
+    }
     openEditor({
-      path: joinPath(skills.data.dir, slug, "SKILL.md"),
+      path: joinPath(dir, slug, "SKILL.md"),
       title: `${slug}/SKILL.md`,
       create: skillTemplate(slug),
-      onSaved: () => void skills.reload(),
+      onSaved: () => {
+        void skills.reload();
+        if (projectRoot) void refreshProject();
+      },
     });
   };
 
@@ -74,28 +94,50 @@ export function SkillsPanel() {
       onRefresh={() => void skills.reload()}
       actions={<IconButton icon={Plus} title="New skill" onClick={() => setCreating(true)} disabled={!skills.data} />}
     >
+      <ScopeSwitch
+        value={choice}
+        project={project}
+        onChange={(s) => {
+          setScope(s);
+          setCreating(false);
+          setQ("");
+        }}
+      />
       {creating && (
         <InlinePrompt
           label="New skill name (slug)"
           placeholder="deploy-check"
-          hint="Saved as ~/.claude/skills/<slug>/SKILL.md"
+          hint={`Saved as ${dirShown}/<slug>/SKILL.md`}
           validate={(v) => {
             const s = slugify(v);
             if (!s) return "Use letters, numbers and hyphens";
             if (skills.data?.list.some((x) => x.dirName === s)) return `${s} already exists`;
             return null;
           }}
-          onSubmit={create}
+          onSubmit={(v) => void create(v)}
           onCancel={() => setCreating(false)}
         />
       )}
       {total > 6 && <SearchInput value={q} onChange={setQ} placeholder="Search skills" />}
-      {skills.data && total === 0 && (
+      {skills.data && total === 0 && !projectRoot && (
         <EmptyState title="No user skills yet">
           A skill is a folder in ~/.claude/skills with a SKILL.md whose frontmatter has a name and a description. Claude Code loads it when the description matches the task, or when you type /name.
         </EmptyState>
       )}
-      {total > 0 && <SectionHeader title={q ? "Matching" : "User skills"} count={shown.length} />}
+      {skills.data && total === 0 && projectRoot && (
+        <EmptyState title="No project skills">
+          {skills.data.exists ? (
+            <>
+              <span className="font-mono">{dirShown}</span> has no skills yet. Use + to add one.
+            </>
+          ) : (
+            <>
+              <span className="font-mono">{dirShown}</span> does not exist yet. New (+) will create it.
+            </>
+          )}
+        </EmptyState>
+      )}
+      {total > 0 && <SectionHeader title={q ? "Matching" : projectRoot ? "Project skills" : "User skills"} count={shown.length} />}
       {shown.map((s) => (
         <Row
           key={s.path}

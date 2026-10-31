@@ -4,6 +4,10 @@
 //! the top-level `mcpServers` (scope "user") and `projects.<path>.mcpServers`
 //! (scope "project"). The first write of a run copies the file to
 //! `~/.claude.json.tsukue-bak`. All logic takes a path so tests use temp files.
+//!
+//! Scope "projectFile" (CONTRACT.md "Project scope") lives in `<root>/.mcp.json`
+//! as `{ "mcpServers": { name: config } }`; the path goes through the files
+//! allowlist, so `root` must be a registered project root.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,10 +16,11 @@ use std::sync::{Mutex, OnceLock};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::files::{atomic_write, blocking, claude_json};
+use crate::files::{Access, allowed, atomic_write, blocking, claude_json};
 
 pub static BACKUP_DONE: OnceLock<()> = OnceLock::new();
 static WRITE_LOCK: Mutex<()> = Mutex::new(());
+static PROJECT_FILE_LOCK: Mutex<()> = Mutex::new(());
 
 /// Serialise every in-process write of `~/.claude.json`.
 pub fn with_claude_json_lock<T>(f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
@@ -44,10 +49,11 @@ pub fn backup_once(path: &Path, flag: &OnceLock<()>) -> Result<(), String> {
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum Scope {
     User,
     Project,
+    ProjectFile,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -122,6 +128,7 @@ fn project_key(scope: Scope, project: Option<&str>) -> Result<Option<&str>, Stri
             Some(p) if !p.is_empty() => Ok(project),
             _ => Err("project scope needs a project path".into()),
         },
+        Scope::ProjectFile => Err("projectFile scope is stored in <root>/.mcp.json".into()),
     }
 }
 
@@ -215,9 +222,104 @@ pub fn remove_at(
     })
 }
 
+// ---------------------------------------------------------------------------
+// projectFile scope: <root>/.mcp.json
+// ---------------------------------------------------------------------------
+
+/// Servers in a project's `.mcp.json` at `path`, labelled with `root`.
+pub fn project_file_list_at(path: &Path, root: &str) -> Result<Vec<McpServer>, String> {
+    let Value::Object(map) = read_json(path)? else {
+        return Err(format!("{} is not a JSON object", path.display()));
+    };
+    let mut out = Vec::new();
+    servers_of(&map, Scope::ProjectFile, Some(root), &mut out);
+    Ok(out)
+}
+
+/// Locked read-modify-write of a project's `.mcp.json` (created when missing).
+fn modify_project_file(
+    path: &Path,
+    f: impl FnOnce(&mut Map<String, Value>) -> Result<(), String>,
+) -> Result<(), String> {
+    let _guard = PROJECT_FILE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let newline = match fs::read_to_string(path) {
+        Ok(t) => t.is_empty() || t.ends_with('\n'),
+        Err(_) => true,
+    };
+    let mut root = read_json(path)?;
+    let Value::Object(map) = &mut root else {
+        return Err(format!("{} is not a JSON object", path.display()));
+    };
+    f(map)?;
+    let mut text =
+        serde_json::to_string_pretty(&root).map_err(|e| format!("cannot serialise: {e}"))?;
+    if newline {
+        text.push('\n');
+    }
+    atomic_write(path, text.as_bytes(), Some(0o644))
+        .map_err(|e| format!("cannot write {}: {e}", path.display()))
+}
+
+pub fn project_file_upsert_at(path: &Path, name: &str, config: Value) -> Result<(), String> {
+    validate_name(name)?;
+    if !config.is_object() {
+        return Err("server config must be a JSON object".into());
+    }
+    modify_project_file(path, |root| {
+        let servers = root
+            .entry("mcpServers".to_string())
+            .or_insert_with(|| Value::Object(Map::new()));
+        match servers {
+            Value::Object(m) => {
+                m.insert(name.to_string(), config);
+                Ok(())
+            }
+            _ => Err(format!(
+                "\"mcpServers\" in {} is not an object",
+                path.display()
+            )),
+        }
+    })
+}
+
+pub fn project_file_remove_at(path: &Path, name: &str) -> Result<(), String> {
+    if !path.exists() {
+        return Err(format!("MCP server not found: {name}"));
+    }
+    modify_project_file(path, |root| {
+        let removed = match root.get_mut("mcpServers") {
+            Some(Value::Object(servers)) => servers.shift_remove(name).is_some(),
+            _ => false,
+        };
+        if removed {
+            Ok(())
+        } else {
+            Err(format!("MCP server not found: {name}"))
+        }
+    })
+}
+
+/// `<project>/.mcp.json` through the files allowlist. Returns (lexical, canonical).
+fn project_file_path(project: Option<&str>, access: Access) -> Result<(PathBuf, PathBuf), String> {
+    let root = match project.map(str::trim) {
+        Some(p) if !p.is_empty() => p,
+        _ => return Err("project scope needs a project path".into()),
+    };
+    let path = Path::new(root).join(".mcp.json");
+    allowed(&path.to_string_lossy(), access)
+}
+
 #[tauri::command]
-pub async fn mcp_list() -> Result<Vec<McpServer>, String> {
-    blocking(|| list_at(&claude_json()?)).await
+pub async fn mcp_list(project: Option<String>) -> Result<Vec<McpServer>, String> {
+    blocking(move || {
+        let mut out = list_at(&claude_json()?)?;
+        if let Some(root) = project.as_deref().filter(|p| !p.trim().is_empty()) {
+            let (lex, _) = project_file_path(Some(root), Access::Read)?;
+            out.extend(project_file_list_at(&lex, root)?);
+        }
+        Ok(out)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -228,6 +330,10 @@ pub async fn mcp_upsert(
     config: Value,
 ) -> Result<(), String> {
     blocking(move || {
+        if scope == Scope::ProjectFile {
+            let (_, canon) = project_file_path(project.as_deref(), Access::Write)?;
+            return project_file_upsert_at(&canon, &name, config);
+        }
         upsert_at(
             &claude_json()?,
             &BACKUP_DONE,
@@ -243,6 +349,10 @@ pub async fn mcp_upsert(
 #[tauri::command]
 pub async fn mcp_remove(scope: Scope, project: Option<String>, name: String) -> Result<(), String> {
     blocking(move || {
+        if scope == Scope::ProjectFile {
+            let (_, canon) = project_file_path(project.as_deref(), Access::Write)?;
+            return project_file_remove_at(&canon, &name);
+        }
         remove_at(
             &claude_json()?,
             &BACKUP_DONE,
@@ -454,6 +564,116 @@ mod tests {
                 0o600
             );
         }
+    }
+
+    const PROJECT_SAMPLE: &str = r#"{
+  "mcpServers": {
+    "zeta": {
+      "command": "zeta"
+    },
+    "alpha": {
+      "type": "http",
+      "url": "https://example.com/mcp"
+    }
+  },
+  "other": 1
+}
+"#;
+
+    #[test]
+    fn project_file_lists_upserts_and_removes_in_order() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join(".mcp.json");
+        fs::write(&p, PROJECT_SAMPLE).unwrap();
+        let list = project_file_list_at(&p, "/repo").unwrap();
+        let names: Vec<_> = list.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["zeta", "alpha"]);
+        let v = serde_json::to_value(&list[0]).unwrap();
+        assert_eq!(v["scope"], "projectFile");
+        assert_eq!(v["project"], "/repo");
+
+        // No-op modify keeps the bytes, including the trailing newline.
+        modify_project_file(&p, |_| Ok(())).unwrap();
+        assert_eq!(fs::read_to_string(&p).unwrap(), PROJECT_SAMPLE);
+
+        project_file_upsert_at(&p, "zeta", json!({"command": "zeta2"})).unwrap();
+        project_file_upsert_at(&p, "beta", json!({"command": "beta"})).unwrap();
+        let v: Value = serde_json::from_str(&fs::read_to_string(&p).unwrap()).unwrap();
+        let keys: Vec<_> = v["mcpServers"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
+        assert_eq!(keys, ["zeta", "alpha", "beta"]);
+        assert_eq!(v["mcpServers"]["zeta"]["command"], "zeta2");
+        assert_eq!(v["other"], 1);
+        let top: Vec<_> = v.as_object().unwrap().keys().cloned().collect();
+        assert_eq!(top, ["mcpServers", "other"]);
+
+        project_file_remove_at(&p, "alpha").unwrap();
+        assert!(
+            project_file_remove_at(&p, "alpha")
+                .unwrap_err()
+                .starts_with("MCP server not found")
+        );
+        let names: Vec<_> = project_file_list_at(&p, "/repo")
+            .unwrap()
+            .into_iter()
+            .map(|s| s.name)
+            .collect();
+        assert_eq!(names, ["zeta", "beta"]);
+        // No backup file for project files.
+        assert!(!backup_path(&p).exists());
+    }
+
+    #[test]
+    fn project_file_is_created_when_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = tmp.path().join(".mcp.json");
+        assert!(project_file_list_at(&p, "/r").unwrap().is_empty());
+        assert!(project_file_remove_at(&p, "x").is_err());
+        assert!(!p.exists());
+        assert!(project_file_upsert_at(&p, "", json!({})).is_err());
+        assert!(project_file_upsert_at(&p, "x", json!("nope")).is_err());
+        assert!(!p.exists());
+        project_file_upsert_at(&p, "a", json!({"command": "a"})).unwrap();
+        assert_eq!(
+            fs::read_to_string(&p).unwrap(),
+            "{\n  \"mcpServers\": {\n    \"a\": {\n      \"command\": \"a\"\n    }\n  }\n}\n"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&p).unwrap().permissions().mode() & 0o777,
+                0o644
+            );
+        }
+    }
+
+    #[test]
+    fn project_file_scope_is_not_written_to_claude_json() {
+        let (_t, p) = setup();
+        let flag = OnceLock::new();
+        let err = upsert_at(&p, &flag, Scope::ProjectFile, Some("/r"), "x", json!({})).unwrap_err();
+        assert!(err.contains(".mcp.json"), "{err}");
+        assert!(remove_at(&p, &flag, Scope::ProjectFile, Some("/r"), "x").is_err());
+        assert_eq!(fs::read_to_string(&p).unwrap(), SAMPLE);
+        let s: Scope = serde_json::from_value(json!("projectFile")).unwrap();
+        assert_eq!(s, Scope::ProjectFile);
+        let u: Scope = serde_json::from_value(json!("user")).unwrap();
+        assert_eq!(u, Scope::User);
+    }
+
+    #[test]
+    fn project_file_path_needs_an_allowed_root() {
+        assert!(project_file_path(None, Access::Read).is_err());
+        assert!(project_file_path(Some("  "), Access::Write).is_err());
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        let err = project_file_path(Some(&root.to_string_lossy()), Access::Write).unwrap_err();
+        assert!(err.starts_with("path not allowed"), "{err}");
     }
 
     /// Read-only check against the real ~/.claude.json: parse + pretty-print must

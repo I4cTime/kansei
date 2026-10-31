@@ -9,11 +9,18 @@
 //! One exception: reads below `~/.claude/` may follow a symlink out of it,
 //! because Omarchy links its skills from `/usr/share/omarchy` into
 //! `~/.claude/skills`. Writes, mkdir and deletes never leave the allowlist.
+//!
+//! Project scope (CONTRACT.md "Project scope"): every pty cwd spawned this run
+//! and every root returned by `project_root` is a project root. Below such a
+//! root only `.claude/**`, `.mcp.json`, `CLAUDE.md` and `CLAUDE.local.md` are
+//! allowed, with the same `..` and symlink rules as `~/.claude`.
 
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{LazyLock, Mutex};
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
@@ -118,6 +125,53 @@ pub enum Access {
     Write,
 }
 
+// ---------------------------------------------------------------------------
+// Project roots
+// ---------------------------------------------------------------------------
+
+/// Project roots seen this run (pty cwds and `project_root` results), stored
+/// both as given (cleaned) and canonicalised.
+static PROJECT_ROOTS: LazyLock<Mutex<HashSet<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// Remember `dir` as a project root for the allowlist. Relative or `..` paths
+/// are ignored.
+pub fn register_project_root(dir: &Path) {
+    let Some(clean) = dir.to_str().and_then(|s| lexical(s, Path::new("/")).ok()) else {
+        return;
+    };
+    let canonical = clean.canonicalize().ok();
+    let mut set = PROJECT_ROOTS.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(c) = canonical {
+        set.insert(c);
+    }
+    set.insert(clean);
+}
+
+fn project_roots() -> Vec<PathBuf> {
+    PROJECT_ROOTS
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .iter()
+        .cloned()
+        .collect()
+}
+
+/// The part of a project below its root that Tsukue may touch.
+fn project_rel_ok(rel: &Path) -> bool {
+    let mut parts = rel.components();
+    match (parts.next(), parts.next()) {
+        (Some(Component::Normal(first)), None) => {
+            first == ".mcp.json"
+                || first == "CLAUDE.md"
+                || first == "CLAUDE.local.md"
+                || first == ".claude"
+        }
+        (Some(Component::Normal(first)), Some(_)) => first == ".claude",
+        _ => false,
+    }
+}
+
 /// The allowlist roots, as given (lexical) and canonicalised.
 pub struct Roots {
     claude_dir: PathBuf,
@@ -128,6 +182,8 @@ pub struct Roots {
     c_claude_json: PathBuf,
     c_app_data: PathBuf,
     c_credentials: PathBuf,
+    /// Project roots (lexical and canonical forms mixed; all absolute, no `..`).
+    projects: Vec<PathBuf>,
 }
 
 impl Roots {
@@ -144,26 +200,42 @@ impl Roots {
             claude_json,
             app_data: app_data.to_path_buf(),
             credentials,
+            projects: Vec::new(),
         })
     }
 
+    /// Add project roots (see `register_project_root`).
+    pub fn with_projects(mut self, roots: impl IntoIterator<Item = PathBuf>) -> Self {
+        self.projects.extend(roots);
+        self
+    }
+
     pub fn current() -> Result<Self, String> {
-        Self::new(&home_dir()?, &app_data_dir()?)
-            .map_err(|e| format!("could not resolve allowed roots: {e}"))
+        Ok(Self::new(&home_dir()?, &app_data_dir()?)
+            .map_err(|e| format!("could not resolve allowed roots: {e}"))?
+            .with_projects(project_roots()))
+    }
+
+    fn project_ok(&self, p: &Path) -> bool {
+        self.projects
+            .iter()
+            .any(|root| p.strip_prefix(root).is_ok_and(project_rel_ok))
     }
 
     fn lexical_ok(&self, p: &Path) -> bool {
         p != self.credentials
             && (p.starts_with(&self.claude_dir)
                 || p == self.claude_json
-                || p.starts_with(&self.app_data))
+                || p.starts_with(&self.app_data)
+                || self.project_ok(p))
     }
 
     fn canonical_ok(&self, p: &Path) -> bool {
         p != self.c_credentials
             && (p.starts_with(&self.c_claude_dir)
                 || p == self.c_claude_json
-                || p.starts_with(&self.c_app_data))
+                || p.starts_with(&self.c_app_data)
+                || self.project_ok(p))
     }
 
     pub fn is_claude_json(&self, canonical: &Path) -> bool {
@@ -188,7 +260,8 @@ impl Roots {
             return Err(denied());
         }
         let ok = self.canonical_ok(&canonical)
-            || (access == Access::Read && lexical.starts_with(&self.claude_dir));
+            || (access == Access::Read
+                && (lexical.starts_with(&self.claude_dir) || self.project_ok(&lexical)));
         if ok {
             Ok((lexical, canonical))
         } else {
@@ -275,6 +348,88 @@ fn check(path: &str, access: Access) -> Result<(Roots, PathBuf, PathBuf), String
     let roots = Roots::current()?;
     let (lex, canon) = roots.resolve(&home, path, access)?;
     Ok((roots, lex, canon))
+}
+
+/// Allowlist check for other modules: returns (lexical, canonical).
+pub fn allowed(path: &str, access: Access) -> Result<(PathBuf, PathBuf), String> {
+    check(path, access).map(|(_, lex, canon)| (lex, canon))
+}
+
+// ---------------------------------------------------------------------------
+// project_root
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectExists {
+    agents: bool,
+    skills: bool,
+    settings: bool,
+    settings_local: bool,
+    mcp_json: bool,
+    claude_md: bool,
+    claude_local_md: bool,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectInfo {
+    root: String,
+    exists: ProjectExists,
+}
+
+/// True when `dir` looks like a project root. `home/.claude` is the user
+/// config dir, so it does not mark home as a project on its own.
+fn is_project_dir(dir: &Path, home: Option<&Path>) -> bool {
+    let claude_marker = home != Some(dir) && dir.join(".claude").is_dir();
+    claude_marker
+        || dir.join(".mcp.json").exists()
+        || dir.join("CLAUDE.md").exists()
+        || dir.join(".git").exists()
+}
+
+/// Walk up from `cwd` (canonicalised) to the nearest project dir; fall back to cwd.
+pub fn find_project_root(cwd: &str, home: Option<&Path>) -> Result<PathBuf, String> {
+    let bad = || format!("cwd does not exist or is not a directory: {cwd}");
+    let start = Path::new(cwd);
+    if !start.is_absolute() || !start.is_dir() {
+        return Err(bad());
+    }
+    let start = start.canonicalize().map_err(|_| bad())?;
+    let home = home.and_then(|h| h.canonicalize().ok());
+    let found = start
+        .ancestors()
+        .find(|d| is_project_dir(d, home.as_deref()))
+        .unwrap_or(&start)
+        .to_path_buf();
+    Ok(found)
+}
+
+pub fn project_info(root: &Path) -> ProjectInfo {
+    let c = root.join(".claude");
+    ProjectInfo {
+        root: s(root),
+        exists: ProjectExists {
+            agents: c.join("agents").is_dir(),
+            skills: c.join("skills").is_dir(),
+            settings: c.join("settings.json").is_file(),
+            settings_local: c.join("settings.local.json").is_file(),
+            mcp_json: root.join(".mcp.json").is_file(),
+            claude_md: root.join("CLAUDE.md").is_file(),
+            claude_local_md: root.join("CLAUDE.local.md").is_file(),
+        },
+    }
+}
+
+#[tauri::command]
+pub async fn project_root(cwd: String) -> Result<ProjectInfo, String> {
+    blocking(move || {
+        let home = home_dir().ok();
+        let root = find_project_root(&cwd, home.as_deref())?;
+        register_project_root(&root);
+        Ok(project_info(&root))
+    })
+    .await
 }
 
 // ---------------------------------------------------------------------------
@@ -541,6 +696,224 @@ mod tests {
         assert!(r(&f, &p, Access::Read).is_ok());
         assert!(r(&f, &p, Access::Write).is_err());
         assert!(r(&f, &format!("{h}/.claude/creds"), Access::Read).is_err());
+    }
+
+    fn project_fixture() -> (Fixture, PathBuf, Roots) {
+        let f = fixture();
+        let proj = f.home.join("Develop/app");
+        fs::create_dir_all(proj.join(".claude/agents")).unwrap();
+        fs::create_dir_all(proj.join("src")).unwrap();
+        fs::write(proj.join("src/main.rs"), "fn main() {}").unwrap();
+        fs::write(proj.join(".env"), "SECRET=1").unwrap();
+        let app_data = f.home.join(".local/share/tsukue");
+        let roots = Roots::new(&f.home, &app_data)
+            .unwrap()
+            .with_projects([proj.clone()]);
+        (f, proj, roots)
+    }
+
+    #[test]
+    fn project_root_allows_only_the_claude_set() {
+        let (f, proj, roots) = project_fixture();
+        let p = proj.to_string_lossy().to_string();
+        for (rel, access) in [
+            (".claude/agents/x.md", Access::Write),
+            (".claude/skills/new/SKILL.md", Access::Write),
+            (".claude/settings.json", Access::Write),
+            (".claude/settings.local.json", Access::Read),
+            (".claude", Access::Read),
+            (".mcp.json", Access::Write),
+            ("CLAUDE.md", Access::Write),
+            ("CLAUDE.local.md", Access::Read),
+        ] {
+            let path = format!("{p}/{rel}");
+            assert!(roots.resolve(&f.home, &path, access).is_ok(), "{rel}");
+        }
+        for rel in [
+            "src/main.rs",
+            ".env",
+            "",
+            ".claudex/y",
+            "sub/.claude/x.md",
+            "sub/CLAUDE.md",
+            ".claude/../src/main.rs",
+            "CLAUDE.md.bak",
+        ] {
+            let path = format!("{p}/{rel}");
+            let err = roots.resolve(&f.home, &path, Access::Read).unwrap_err();
+            assert!(err.starts_with("path not allowed"), "{rel}: {err}");
+        }
+        // Without the project root registered, nothing in it is allowed.
+        let none = Roots::new(&f.home, &f.home.join(".local/share/tsukue")).unwrap();
+        assert!(
+            none.resolve(&f.home, &format!("{p}/CLAUDE.md"), Access::Read)
+                .is_err()
+        );
+        // Credentials stay refused even when home is a project root.
+        let home_proj = Roots::new(&f.home, &f.home.join(".local/share/tsukue"))
+            .unwrap()
+            .with_projects([f.home.clone()]);
+        let h = f.home.to_string_lossy().to_string();
+        assert!(
+            home_proj
+                .resolve(
+                    &f.home,
+                    &format!("{h}/.claude/.credentials.json"),
+                    Access::Read
+                )
+                .is_err()
+        );
+        assert!(
+            home_proj
+                .resolve(&f.home, &format!("{h}/CLAUDE.md"), Access::Write)
+                .is_ok()
+        );
+        assert!(
+            home_proj
+                .resolve(&f.home, &format!("{h}/.ssh/id"), Access::Read)
+                .is_err()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn project_symlinks_follow_for_reads_only() {
+        let (f, proj, roots) = project_fixture();
+        let outside = f.home.join("shared-agents");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("a.md"), "hi").unwrap();
+        std::os::unix::fs::symlink(&outside, proj.join(".claude/linked")).unwrap();
+        std::os::unix::fs::symlink(proj.join("src/main.rs"), proj.join("CLAUDE.local.md")).unwrap();
+        std::os::unix::fs::symlink(
+            f.home.join(".claude/.credentials.json"),
+            proj.join(".claude/creds"),
+        )
+        .unwrap();
+        let p = proj.to_string_lossy().to_string();
+        let linked = format!("{p}/.claude/linked/a.md");
+        assert!(roots.resolve(&f.home, &linked, Access::Read).is_ok());
+        assert!(roots.resolve(&f.home, &linked, Access::Write).is_err());
+        let local = format!("{p}/CLAUDE.local.md");
+        assert!(roots.resolve(&f.home, &local, Access::Read).is_ok());
+        assert!(roots.resolve(&f.home, &local, Access::Write).is_err());
+        // Deleting the link itself is fine; the target is not touched.
+        assert!(roots.resolve_no_follow(&f.home, &local).is_ok());
+        assert!(
+            roots
+                .resolve(&f.home, &format!("{p}/.claude/creds"), Access::Read)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn project_rel_rules() {
+        for ok in [
+            ".mcp.json",
+            "CLAUDE.md",
+            "CLAUDE.local.md",
+            ".claude",
+            ".claude/a/b.md",
+        ] {
+            assert!(project_rel_ok(Path::new(ok)), "{ok}");
+        }
+        for bad in [
+            "",
+            "src",
+            ".mcp.json/x",
+            "CLAUDE.md/x",
+            "a/.claude",
+            ".git/config",
+        ] {
+            assert!(!project_rel_ok(Path::new(bad)), "{bad}");
+        }
+    }
+
+    #[test]
+    fn finds_project_root_by_walking_up() {
+        let tmp = tempfile::tempdir().unwrap();
+        let base = tmp.path().canonicalize().unwrap();
+        let home = base.join("home");
+        let repo = home.join("Develop/repo");
+        let deep = repo.join("src/deep");
+        fs::create_dir_all(&deep).unwrap();
+        fs::create_dir_all(home.join(".claude")).unwrap();
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        let h = Some(home.as_path());
+
+        assert_eq!(find_project_root(&s(&deep), h).unwrap(), repo);
+        assert_eq!(find_project_root(&s(&repo), h).unwrap(), repo);
+
+        // A CLAUDE.md nearer than .git wins.
+        fs::write(repo.join("src/CLAUDE.md"), "# x").unwrap();
+        assert_eq!(find_project_root(&s(&deep), h).unwrap(), repo.join("src"));
+
+        // ~/.claude alone does not make home the project: fall back to cwd.
+        let loose = home.join("notes/day");
+        fs::create_dir_all(&loose).unwrap();
+        assert_eq!(find_project_root(&s(&loose), h).unwrap(), loose);
+        assert_eq!(find_project_root(&s(&home), h).unwrap(), home);
+        // ...but ~/CLAUDE.md does.
+        fs::write(home.join("CLAUDE.md"), "# home").unwrap();
+        assert_eq!(find_project_root(&s(&loose), h).unwrap(), home);
+
+        // .mcp.json and .claude/ mark a root too.
+        let other = home.join("other/a");
+        fs::create_dir_all(other.join(".claude")).unwrap();
+        fs::create_dir_all(other.join("b")).unwrap();
+        assert_eq!(find_project_root(&s(&other.join("b")), h).unwrap(), other);
+
+        for bad in ["relative/dir", "/definitely/not/here/tsukue"] {
+            let err = find_project_root(bad, h).unwrap_err();
+            assert!(err.starts_with("cwd does not exist"), "{err}");
+        }
+        let file = repo.join("file.txt");
+        fs::write(&file, "x").unwrap();
+        assert!(find_project_root(&s(&file), h).is_err());
+    }
+
+    #[test]
+    fn project_info_reports_existing_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        fs::create_dir_all(root.join(".claude/agents")).unwrap();
+        fs::write(root.join(".claude/settings.json"), "{}").unwrap();
+        fs::write(root.join(".mcp.json"), "{}").unwrap();
+        fs::write(root.join("CLAUDE.md"), "# x").unwrap();
+        let info = project_info(&root);
+        assert_eq!(info.root, s(&root));
+        assert_eq!(
+            info.exists,
+            ProjectExists {
+                agents: true,
+                skills: false,
+                settings: true,
+                settings_local: false,
+                mcp_json: true,
+                claude_md: true,
+                claude_local_md: false,
+            }
+        );
+        let v = serde_json::to_value(&info).unwrap();
+        assert_eq!(v["exists"]["settingsLocal"], false);
+        assert_eq!(v["exists"]["mcpJson"], true);
+        assert_eq!(v["exists"]["claudeLocalMd"], false);
+    }
+
+    #[test]
+    fn register_ignores_relative_and_dotdot() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().canonicalize().unwrap().join("reg-test");
+        fs::create_dir_all(&dir).unwrap();
+        register_project_root(Path::new("relative/x"));
+        register_project_root(Path::new(&format!("{}/../x", dir.display())));
+        register_project_root(&dir);
+        let roots = project_roots();
+        assert!(roots.contains(&dir));
+        assert!(
+            !roots
+                .iter()
+                .any(|r| r.is_relative() || r.components().any(|c| c == Component::ParentDir))
+        );
     }
 
     #[test]

@@ -1,10 +1,11 @@
 // Pure helpers between an MCP server config object and the inline form.
+import type { McpScope } from "../../lib/ipc";
 
 export type Transport = "stdio" | "http" | "sse";
 
 export type McpForm = {
   name: string;
-  scope: "user" | "project";
+  scope: McpScope;
   project: string;
   type: Transport;
   command: string;
@@ -52,7 +53,7 @@ export function parseLines(text: string, sep: "=" | ":"): { value: Record<string
   return { value, error: null };
 }
 
-export function formFromConfig(name: string, scope: "user" | "project", project: string, config: Record<string, unknown>): McpForm {
+export function formFromConfig(name: string, scope: McpScope, project: string, config: Record<string, unknown>): McpForm {
   const t = transportOf(config);
   return {
     name,

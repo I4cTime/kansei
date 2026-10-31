@@ -31,12 +31,27 @@ export type MemoryProject = {
   hasIndex: boolean; // MEMORY.md present
 };
 
-export type McpScope = "user" | "project";
+/** "project" = projects.<path>.mcpServers in ~/.claude.json; "projectFile" = <root>/.mcp.json. */
+export type McpScope = "user" | "project" | "projectFile";
 export type McpServer = {
   scope: McpScope;
   project?: string;
   name: string;
   config: Record<string, unknown>;
+};
+
+/** project_root result (CONTRACT.md "Project scope"). `root` is canonical. */
+export type ProjectInfo = {
+  root: string;
+  exists: {
+    agents: boolean;
+    skills: boolean;
+    settings: boolean;
+    settingsLocal: boolean;
+    mcpJson: boolean;
+    claudeMd: boolean;
+    claudeLocalMd: boolean;
+  };
 };
 
 /** pid is the pty child's pid (null if the platform did not report one). */
@@ -88,8 +103,14 @@ export const sessions = {
   list: () => invoke<Session[]>("sessions_list"),
 };
 
+export const project = {
+  /** Walk up from cwd to the project root; also opens that root in the files allowlist. */
+  root: (cwd: string) => invoke<ProjectInfo>("project_root", { cwd }),
+};
+
 export const mcp = {
-  list: () => invoke<McpServer[]>("mcp_list"),
+  /** With `project` (a root from project.root) the list also has that root's .mcp.json servers. */
+  list: (project?: string) => invoke<McpServer[]>("mcp_list", project ? { project } : {}),
   upsert: (s: McpServer) => invoke<null>("mcp_upsert", s),
   remove: (s: { scope: McpScope; project?: string; name: string }) => invoke<null>("mcp_remove", s),
 };

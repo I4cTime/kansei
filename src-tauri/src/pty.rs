@@ -219,12 +219,15 @@ pub fn pty_spawn(
     cols: u16,
     rows: u16,
 ) -> Result<SpawnResult, String> {
+    let root = std::path::PathBuf::from(&cwd);
     let id = spawn(&state, cwd, command, args, cols, rows, move |ev| {
         let _ = match ev {
             PtyEvent::Data { id, data } => app.emit("pty:data", DataEvent { id, data }),
             PtyEvent::Exit { id, code } => app.emit("pty:exit", ExitEvent { id, code }),
         };
     })?;
+    // Project scope: files below a tab's cwd become reachable (CONTRACT.md).
+    crate::files::register_project_root(&root);
     let pid = state.lock().get(&id).and_then(|h| h.pid);
     Ok(SpawnResult { id, pid })
 }
