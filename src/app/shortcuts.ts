@@ -23,7 +23,7 @@ export function matchShortcut(e: KeyboardEvent): ShortcutAction | null {
     case "KeyB":
       return { type: "toggleSidebar" };
   }
-  const m = /^Digit([1-7])$/.exec(e.code);
+  const m = /^Digit([1-8])$/.exec(e.code);
   if (m) return { type: "section", index: Number(m[1]) - 1 };
   return null;
 }

@@ -2,6 +2,7 @@ mod files;
 mod mcp;
 mod memory;
 mod pty;
+mod sessions;
 
 use tauri::{Manager, RunEvent};
 
@@ -36,6 +37,7 @@ pub fn run() {
             mcp::mcp_list,
             mcp::mcp_upsert,
             mcp::mcp_remove,
+            sessions::sessions_list,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

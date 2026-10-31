@@ -36,7 +36,6 @@ pub struct PtyHandle {
     master: Box<dyn MasterPty + Send>,
     input: mpsc::Sender<Vec<u8>>,
     killer: Box<dyn ChildKiller + Send + Sync>,
-    #[cfg_attr(not(unix), allow(dead_code))]
     pid: Option<u32>,
     alive: Arc<AtomicBool>,
 }
@@ -95,6 +94,7 @@ impl PtyState {
 #[derive(Serialize)]
 pub struct SpawnResult {
     id: String,
+    pid: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -103,6 +103,7 @@ pub struct PtyInfo {
     cwd: String,
     command: String,
     alive: bool,
+    pid: Option<u32>,
 }
 
 #[derive(Serialize, Clone)]
@@ -224,7 +225,8 @@ pub fn pty_spawn(
             PtyEvent::Exit { id, code } => app.emit("pty:exit", ExitEvent { id, code }),
         };
     })?;
-    Ok(SpawnResult { id })
+    let pid = state.lock().get(&id).and_then(|h| h.pid);
+    Ok(SpawnResult { id, pid })
 }
 
 pub fn spawn<F>(
@@ -436,6 +438,7 @@ fn pty_list_inner(state: &PtyState) -> Vec<PtyInfo> {
             cwd: h.cwd.clone(),
             command: h.command.clone(),
             alive: h.alive.load(Ordering::SeqCst),
+            pid: h.pid,
         })
         .collect();
     out.sort_by_key(|p| p.id.parse::<u64>().unwrap_or(u64::MAX));
@@ -518,6 +521,7 @@ mod tests {
         assert_eq!(code, Some(Some(3)));
         let info = &pty_list_inner(&state)[0];
         assert!(!info.alive);
+        assert!(info.pid.is_some_and(|p| p > 0));
     }
 
     #[test]

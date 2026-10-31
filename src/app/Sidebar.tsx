@@ -60,7 +60,7 @@ export function Sidebar() {
           {PANELS.map((p, i) => {
             const isActive = p.id === active?.id;
             const Icon = p.icon;
-            const hint = i < 7 ? ` (Ctrl+Shift+${i + 1})` : "";
+            const hint = i < 8 ? ` (Ctrl+Shift+${i + 1})` : "";
             return (
               <button
                 key={p.id}

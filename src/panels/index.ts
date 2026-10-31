@@ -1,5 +1,6 @@
-import { Bot, Brain, Plug, Settings, Sparkles, Webhook, Workflow } from "lucide-react";
+import { Bot, Brain, History, Plug, Settings, Sparkles, Webhook, Workflow } from "lucide-react";
 import type { PanelDef } from "./types";
+import { SessionsPanel } from "./sessions/SessionsPanel";
 import { MemoryPanel } from "./memory/MemoryPanel";
 import { McpPanel } from "./mcps/McpPanel";
 import { AgentsPanel } from "./agents/AgentsPanel";
@@ -9,6 +10,7 @@ import { HooksPanel } from "./hooks/HooksPanel";
 import { SettingsPanel } from "./settings/SettingsPanel";
 
 export const PANELS: PanelDef[] = [
+  { id: "sessions", label: "Sessions", icon: History, Component: SessionsPanel },
   { id: "memory", label: "Memory", icon: Brain, Component: MemoryPanel },
   { id: "mcps", label: "MCPs", icon: Plug, Component: McpPanel },
   { id: "agents", label: "Agents", icon: Bot, Component: AgentsPanel },

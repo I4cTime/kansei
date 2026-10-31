@@ -35,6 +35,6 @@ cd src-tauri && cargo build && cargo test && cargo clippy --all-targets
 ## Keyboard
 
 Ctrl+Shift+T new tab, Ctrl+Shift+W close, Ctrl+PageUp/PageDown switch,
-Ctrl+Shift+B toggle sidebar, Ctrl+Shift+1..7 jump to a section, Esc closes
+Ctrl+Shift+B toggle sidebar, Ctrl+Shift+1..8 jump to a section, Esc closes
 the editor sheet, Ctrl+S saves in it, Ctrl+Shift+C / V copy and paste in the
 terminal.

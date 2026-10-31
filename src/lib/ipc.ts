@@ -39,11 +39,27 @@ export type McpServer = {
   config: Record<string, unknown>;
 };
 
-export type PtyInfo = { id: string; cwd: string; command: string; alive: boolean };
+/** pid is the pty child's pid (null if the platform did not report one). */
+export type PtyInfo = { id: string; cwd: string; command: string; alive: boolean; pid?: number | null };
+
+/** One Claude Code session (CONTRACT.md "Sessions"). Timestamps are epoch ms. */
+export type Session = {
+  id: string;
+  /** Real project path from history, the live cwd, or decoded from the transcript dir. */
+  project: string | null;
+  /** First prompt (trimmed to 120 chars) or "(no prompt recorded)". */
+  title: string;
+  firstTs: number | null;
+  lastTs: number;
+  prompts: number;
+  transcriptPath: string | null;
+  transcriptBytes: number;
+  live: { pid: number; status: string | null; name: string | null; cwd: string | null } | null;
+};
 
 export const pty = {
   spawn: (a: { cwd: string; command: string; args: string[]; cols: number; rows: number }) =>
-    invoke<{ id: string }>("pty_spawn", a),
+    invoke<{ id: string; pid?: number | null }>("pty_spawn", a),
   write: (id: string, data: string) => invoke<null>("pty_write", { id, data }),
   resize: (id: string, cols: number, rows: number) => invoke<null>("pty_resize", { id, cols, rows }),
   kill: (id: string) => invoke<null>("pty_kill", { id }),
@@ -66,6 +82,10 @@ export const files = {
 
 export const memory = {
   projects: () => invoke<MemoryProject[]>("memory_projects"),
+};
+
+export const sessions = {
+  list: () => invoke<Session[]>("sessions_list"),
 };
 
 export const mcp = {
