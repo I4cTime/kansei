@@ -29,10 +29,10 @@ export function readTerminalTheme(): ITheme {
   return {
     background: bg,
     foreground: fg,
-    cursor: fg,
+    cursor: v("--t-cursor", fg),
     cursorAccent: bg,
-    selectionBackground: withAlpha(accent, 0.3),
-    selectionInactiveBackground: withAlpha(accent, 0.15),
+    selectionBackground: v("--t-selection", withAlpha(accent, 0.25)),
+    selectionInactiveBackground: withAlpha(accent, 0.12),
     scrollbarSliderBackground: withAlpha(v("--fg-muted", "#8b91a3"), 0.25),
     scrollbarSliderHoverBackground: withAlpha(v("--fg-muted", "#8b91a3"), 0.4),
     scrollbarSliderActiveBackground: withAlpha(v("--fg-muted", "#8b91a3"), 0.55),

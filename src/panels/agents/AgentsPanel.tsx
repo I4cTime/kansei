@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Plus, Trash } from "lucide-react";
 import { files } from "../../lib/ipc";
 import { Badge, IconButton } from "../ui";
-import { useOpenEditor } from "../shared/EditorSheet";
+import { useOpenEditorTracked } from "../shared/EditorSheet";
 import { getPaths, useLoad, useToast } from "../shared/hooks";
 import { loadDocs, matches, type Doc } from "../shared/docs";
 import { ConfirmBar, EmptyState, InlinePrompt, Note, Panel, Row, SearchInput, SectionHeader } from "../shared/list";
@@ -31,7 +31,7 @@ export function modelTone(model: string | undefined): "accent" | "ok" | "warn" |
 
 export function AgentsPanel() {
   const toast = useToast();
-  const openEditor = useOpenEditor();
+  const { openEditor, openPath } = useOpenEditorTracked();
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -106,6 +106,7 @@ export function AgentsPanel() {
             subtitle={d.meta.description || d.firstLine}
             clamp={2}
             tooltip={[d.path, d.meta.tools && `tools: ${d.meta.tools}`].filter(Boolean).join("\n")}
+            active={openPath === d.path}
             onClick={() => openEditor({ path: d.path, onSaved: () => void agents.reload() })}
             actions={<IconButton icon={Trash} title={`Delete ${d.file}`} danger onClick={() => setConfirmDelete(d.path)} />}
           />

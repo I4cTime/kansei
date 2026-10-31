@@ -16,7 +16,7 @@ export function SettingsPanel() {
   const [reloadKey, setReloadKey] = useState(0);
   return (
     <Panel title="Settings" onRefresh={() => setReloadKey((n) => n + 1)}>
-      <div className="flex gap-1 px-3 pt-3" role="tablist">
+      <div className="flex gap-3 border-b border-border px-3 pt-2" role="tablist">
         {(
           [
             ["claude", "Claude"],
@@ -30,8 +30,8 @@ export function SettingsPanel() {
             aria-selected={tab === id}
             onClick={() => setTab(id)}
             className={cx(
-              "flex-1 cursor-pointer rounded-ui border px-2 py-1 text-xs font-medium",
-              tab === id ? "border-accent bg-accent text-accent-fg" : "border-border text-fg-muted hover:bg-bg-hover hover:text-fg",
+              "-mb-px cursor-pointer border-b-2 px-1 pt-1 pb-1.5 text-xs font-medium transition-colors",
+              tab === id ? "border-accent text-fg" : "border-transparent text-fg-muted hover:text-fg",
             )}
           >
             {label}

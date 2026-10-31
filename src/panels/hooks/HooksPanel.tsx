@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, FileText, Plus, Trash, Undo2 } from "lucide-react";
-import { Badge, Button, IconButton, TextArea, TextInput } from "../ui";
+import { Badge, Button, IconButton, TextArea, TextInput, cx } from "../ui";
 import { useOpenEditor } from "../shared/EditorSheet";
 import { getPaths, readJsonObject, useLoad, useToast, writeJson } from "../shared/hooks";
 import { ConfirmBar, Note, Panel } from "../shared/list";
@@ -130,8 +130,17 @@ export function HooksPanel() {
                   aria-expanded={isOpen}
                 >
                   {isOpen ? <ChevronDown size={13} className="shrink-0 text-fg-muted" /> : <ChevronRight size={13} className="shrink-0 text-fg-muted" />}
-                  <span className="truncate font-mono text-xs text-fg">{ev}</span>
-                  {count > 0 && <Badge tone="accent">{count}</Badge>}
+                  <span className={cx("truncate font-mono text-xs", count > 0 ? "text-fg" : "text-fg-muted")}>{ev}</span>
+                  <span className="flex-1" />
+                  {count > 0 && (
+                    <span
+                      className="inline-flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-accent/15 px-1 text-[10px] font-semibold text-accent"
+                      title={`${count} command${count === 1 ? "" : "s"}`}
+                      aria-label={`${count} command${count === 1 ? "" : "s"}`}
+                    >
+                      {count}
+                    </span>
+                  )}
                 </button>
                 <IconButton
                   icon={Plus}

@@ -96,6 +96,7 @@ export function CodeEditor({
   wrap,
   onChange,
   autoFocus,
+  readOnly,
   className,
 }: {
   /** Initial document. Changing it later does not reset the editor; remount with a key instead. */
@@ -104,6 +105,8 @@ export function CodeEditor({
   wrap?: boolean;
   onChange?: (doc: string) => void;
   autoFocus?: boolean;
+  /** Display only: no edits, no caret. Changing it remounts the view. */
+  readOnly?: boolean;
   className?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -122,6 +125,7 @@ export function CodeEditor({
           langExt(lang),
           tokenTheme,
           wrap ? EditorView.lineWrapping : [],
+          readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [],
           EditorView.updateListener.of((u) => {
             if (u.docChanged) onChangeRef.current?.(u.state.doc.toString());
           }),
@@ -130,9 +134,9 @@ export function CodeEditor({
     });
     if (autoFocus) view.focus();
     return () => view.destroy();
-    // value is initial only; lang/wrap changes remount.
+    // value is initial only; lang/wrap/readOnly changes remount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lang, wrap]);
+  }, [lang, wrap, readOnly]);
 
   return <div ref={host} className={className ?? "h-full min-h-0 overflow-hidden"} />;
 }

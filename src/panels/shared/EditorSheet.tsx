@@ -1,7 +1,7 @@
 // Editor sheet rendered through the overlay host. Ctrl+S saves, Esc (handled by
 // the shell via overlay.onEscape) closes, asking first when there are unsaved changes.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { useSetAtom, useStore } from "jotai";
+import { useAtomValue, useSetAtom, useStore } from "jotai";
 import { Save, X } from "lucide-react";
 import { files } from "../../lib/ipc";
 import { overlayAtom, pushToastAtom } from "../../lib/overlay";
@@ -54,6 +54,29 @@ export function useOpenEditor(): (o: OpenEditorOptions) => void {
     },
     [store],
   );
+}
+
+/**
+ * Like useOpenEditor, but also returns the path of the file this panel opened
+ * while its sheet is still showing, so the panel can highlight that row.
+ */
+export function useOpenEditorTracked(): { openEditor: (o: OpenEditorOptions) => void; openPath: string | null } {
+  const store = useStore();
+  const openEditor = useOpenEditor();
+  const overlay = useAtomValue(overlayAtom);
+  const [opened, setOpened] = useState<{ path: string; overlay: unknown } | null>(null);
+  const tracked = useCallback(
+    (o: OpenEditorOptions) => {
+      const before = store.get(overlayAtom);
+      openEditor(o);
+      const after = store.get(overlayAtom);
+      // openEditor refuses while another sheet has unsaved changes; only track a real open.
+      if (after && after !== before) setOpened({ path: o.path, overlay: after });
+    },
+    [store, openEditor],
+  );
+  const openPath = opened && overlay === opened.overlay ? opened.path : null;
+  return { openEditor: tracked, openPath };
 }
 
 function EditorSheet({ opts, ctl, close }: { opts: OpenEditorOptions; ctl: Ctl; close: () => void }) {

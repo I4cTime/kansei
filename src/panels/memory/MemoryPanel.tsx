@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { BookOpen, Plus, Trash } from "lucide-react";
 import { files, memory, type MemoryProject } from "../../lib/ipc";
 import { Button, IconButton, Select } from "../ui";
-import { useOpenEditor } from "../shared/EditorSheet";
+import { useOpenEditorTracked } from "../shared/EditorSheet";
 import { getPaths, useLoad, usePaths, useToast } from "../shared/hooks";
 import { loadDocs, matches, type Doc } from "../shared/docs";
 import { ConfirmBar, EmptyState, InlinePrompt, Note, Panel, Row, SearchInput, SectionHeader } from "../shared/list";
@@ -13,7 +13,14 @@ const TYPE_LABEL: Record<string, string> = { user: "User", feedback: "Feedback",
 
 function projectLabel(p: MemoryProject, home?: string): string {
   if (p.guessedPath) return home && p.guessedPath === home ? "~ (home)" : basename(p.guessedPath);
-  return p.encoded;
+  return `${p.encoded} (missing folder)`;
+}
+
+/** Resolved projects first by label, then the ones whose folder no longer exists. */
+function compareProjects(a: MemoryProject, b: MemoryProject, home?: string): number {
+  const ra = a.guessedPath ? 0 : 1;
+  const rb = b.guessedPath ? 0 : 1;
+  return ra - rb || projectLabel(a, home).localeCompare(projectLabel(b, home));
 }
 
 function memoryTemplate(slug: string): string {
@@ -36,7 +43,7 @@ The rule or fact, stated plainly.
 export function MemoryPanel() {
   const paths = usePaths();
   const toast = useToast();
-  const openEditor = useOpenEditor();
+  const { openEditor, openPath } = useOpenEditorTracked();
   const [selected, setSelected] = useState<string | null>(null);
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
@@ -45,7 +52,7 @@ export function MemoryPanel() {
   const projects = useLoad(
     useCallback(async () => {
       const [list, p] = await Promise.all([memory.projects(), getPaths()]);
-      const sorted = [...list].sort((a, b) => projectLabel(a, p.home).localeCompare(projectLabel(b, p.home)));
+      const sorted = [...list].sort((a, b) => compareProjects(a, b, p.home));
       setSelected((cur) => {
         if (cur && sorted.some((x) => x.encoded === cur)) return cur;
         return (sorted.find((x) => x.guessedPath === p.home) ?? sorted[0])?.encoded ?? null;
@@ -135,14 +142,14 @@ export function MemoryPanel() {
         >
           {(projects.data ?? []).map((p) => (
             <option key={p.encoded} value={p.encoded} title={p.guessedPath ?? p.encoded}>
-              {projectLabel(p, paths?.home)} ({p.fileCount})
+              {projectLabel(p, paths?.home)} ({p.fileCount - (p.hasIndex ? 1 : 0)})
             </option>
           ))}
           {projects.data && projects.data.length === 0 && <option value="">No projects with memory</option>}
         </Select>
         {project && (
           <div className="truncate font-mono text-[11px] text-fg-muted" title={project.guessedPath ?? project.encoded}>
-            {project.guessedPath ? tildify(project.guessedPath, paths?.home) : `${project.encoded} (path not found)`}
+            {project.guessedPath ? tildify(project.guessedPath, paths?.home) : `${project.encoded} (missing folder)`}
           </div>
         )}
         <Button icon={BookOpen} onClick={openIndex} disabled={!project} className="justify-center">
@@ -182,6 +189,7 @@ export function MemoryPanel() {
                 subtitle={d.meta.description || d.firstLine}
                 clamp={2}
                 tooltip={d.path}
+                active={openPath === d.path}
                 onClick={() => openEditor({ path: d.path, onSaved: () => void docs.reload() })}
                 actions={<IconButton icon={Trash} title={`Delete ${d.file}`} danger onClick={() => setConfirmDelete(d.path)} />}
               />

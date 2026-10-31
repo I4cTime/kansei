@@ -10,6 +10,30 @@ import { configFromForm, emptyForm, formFromConfig, summaryOf, transportOf, type
 
 const keyOf = (s: { scope: string; project?: string; name: string }) => `${s.scope}|${s.project ?? ""}|${s.name}`;
 
+const MASK = "••••••";
+const SECRET_KEYS = ["headers", "env"] as const;
+
+/** Display copy of a raw config with every value under headers and env masked. */
+function maskedRaw(raw: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return "// This JSON does not parse. Show values to view and fix it.";
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return JSON.stringify(parsed, null, 2);
+  const out: Record<string, unknown> = { ...(parsed as Record<string, unknown>) };
+  for (const k of SECRET_KEYS) {
+    const v = out[k];
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      out[k] = Object.fromEntries(Object.keys(v).map((name) => [name, MASK]));
+    } else if (v !== undefined) {
+      out[k] = MASK;
+    }
+  }
+  return JSON.stringify(out, null, 2);
+}
+
 export function McpPanel() {
   const paths = usePaths();
   const servers = useLoad(useCallback(() => mcp.list(), []), []);
@@ -226,8 +250,19 @@ function McpEditor({ server, projectPaths, onDone, onCancel }: { server?: McpSer
       )}
 
       {raw !== null ? (
-        <div className="h-56 overflow-hidden rounded-ui border border-border">
-          <CodeEditor key={rawKey} value={raw} lang="json" onChange={setRaw} />
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center">
+            <span className="flex-1 text-[11px] font-medium uppercase tracking-wide text-fg-muted">Config</span>
+            <IconButton icon={reveal ? EyeOff : Eye} title={reveal ? "Hide values" : "Show values"} onClick={() => setReveal(!reveal)} className="h-5 w-5" />
+          </div>
+          <div className="h-56 overflow-hidden rounded-ui border border-border">
+            {reveal ? (
+              <CodeEditor key={`${rawKey}-edit`} value={raw} lang="json" onChange={setRaw} />
+            ) : (
+              <CodeEditor key={`${rawKey}-masked`} value={maskedRaw(raw)} lang="json" readOnly />
+            )}
+          </div>
+          {!reveal && <span className="text-[11px] text-fg-muted">Header and env values are hidden. Show values to edit the JSON.</span>}
         </div>
       ) : form.type === "stdio" ? (
         <>
