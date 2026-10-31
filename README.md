@@ -16,8 +16,10 @@ pnpm install
 pnpm tauri build      # release bundle (deb, rpm, AppImage)
 ```
 
-`run-dev.sh` sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`, which WebKitGTK needs on
-this NVIDIA + Hyprland machine, and `TSUKUE_DRIVER=/tmp/tsukue-driver.sock`,
+`run-dev.sh` sets `__NV_DISABLE_EXPLICIT_SYNC=1`, because NVIDIA explicit sync
+makes WebKitGTK's DMA-BUF renderer die with "Missing acquire timeline" on this
+Hyprland machine (the software fallback `WEBKIT_DISABLE_DMABUF_RENDERER=1` works
+too but types with visible lag), and `TSUKUE_DRIVER=/tmp/tsukue-driver.sock`,
 a debug-only socket that runs JavaScript inside the webview for UI checks:
 
 ```sh
