@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tsukue",
+  "productName": "Tsukue",
   "version": "0.1.0",
   "identifier": "studio.i4c.tsukue",
   "build": {
@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "tsukue",
-        "width": 800,
-        "height": 600
+        "title": "Tsukue",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 900,
+        "minHeight": 600
       }
     ],
     "security": {
