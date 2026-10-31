@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* Design tokens. Dark default, light under prefers-color-scheme or data-theme. */
+:root {
+  --bg: #0f1115;
+  --bg-raised: #171a21;
+  --bg-sunken: #0a0c10;
+  --bg-hover: #1f2330;
+  --fg: #e6e8ee;
+  --fg-muted: #8b91a3;
+  --border: #262b38;
+  --accent: #7aa2f7;
+  --accent-fg: #0b1020;
+  --danger: #f7768e;
+  --ok: #9ece6a;
+  --warn: #e0af68;
+  --radius: 6px;
+  --font-ui: system-ui, "Inter", sans-serif;
+  --font-mono: "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, monospace;
+  /* terminal ANSI palette */
+  --t-black: #15161e; --t-red: #f7768e; --t-green: #9ece6a; --t-yellow: #e0af68;
+  --t-blue: #7aa2f7; --t-magenta: #bb9af7; --t-cyan: #7dcfff; --t-white: #a9b1d6;
+  --t-bblack: #414868; --t-bred: #f7768e; --t-bgreen: #9ece6a; --t-byellow: #e0af68;
+  --t-bblue: #7aa2f7; --t-bmagenta: #bb9af7; --t-bcyan: #7dcfff; --t-bwhite: #c0caf5;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f6f7fa; --bg-raised: #ffffff; --bg-sunken: #eceef3; --bg-hover: #e6e9f0;
+    --fg: #1b1e28; --fg-muted: #5f6578; --border: #d8dce6;
+    --accent: #3b6fd8; --accent-fg: #ffffff; --danger: #c7384f; --ok: #3f8f3a; --warn: #b07a1a;
+    --t-black: #1b1e28; --t-white: #5f6578; --t-bblack: #7a8094; --t-bwhite: #1b1e28;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f6f7fa; --bg-raised: #ffffff; --bg-sunken: #eceef3; --bg-hover: #e6e9f0;
+  --fg: #1b1e28; --fg-muted: #5f6578; --border: #d8dce6;
+  --accent: #3b6fd8; --accent-fg: #ffffff; --danger: #c7384f; --ok: #3f8f3a; --warn: #b07a1a;
+  --t-black: #1b1e28; --t-white: #5f6578; --t-bblack: #7a8094; --t-bwhite: #1b1e28;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-raised: var(--bg-raised);
+  --color-bg-sunken: var(--bg-sunken);
+  --color-bg-hover: var(--bg-hover);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-danger: var(--danger);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --font-ui: var(--font-ui);
+  --font-mono: var(--font-mono);
+  --radius-ui: var(--radius);
+}
+
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 13px; overflow: hidden; }
+* { box-sizing: border-box; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
