@@ -1,13 +1,29 @@
 #!/usr/bin/env bash
 # Start Tsukue in dev mode detached, log to /tmp/tsukue-dev.log.
-# Kills a previous instance and its Vite server first.
+# Stops only the dev instance this script started before (its process group,
+# recorded in a pidfile) plus whatever holds the Vite port. Never kills by name:
+# the packaged Tsukue binary is also called `tsukue`.
 cd "$(dirname "$0")"
-pkill -x tsukue 2>/dev/null
+PIDFILE=/tmp/tsukue-dev.pid
+if [ -f "$PIDFILE" ]; then
+  pgid=$(cat "$PIDFILE" 2>/dev/null)
+  if [[ "$pgid" =~ ^[0-9]+$ ]] && kill -0 -- "-$pgid" 2>/dev/null; then
+    kill -- "-$pgid" 2>/dev/null
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      kill -0 -- "-$pgid" 2>/dev/null || break
+      sleep 0.3
+    done
+    kill -KILL -- "-$pgid" 2>/dev/null
+  fi
+  rm -f "$PIDFILE"
+fi
 fuser -k 1420/tcp >/dev/null 2>&1
 sleep 1
 # NVIDIA explicit sync breaks WebKitGTK's DMA-BUF renderer ("Missing acquire timeline"); disabling it keeps the GPU path.
 # (the binary sets __NV_DISABLE_EXPLICIT_SYNC itself when an NVIDIA driver is present)
 export TSUKUE_DRIVER=/tmp/tsukue-driver.sock
 rm -f "$TSUKUE_DRIVER"
+# setsid makes pnpm the leader of a new process group, so its pid is the group id.
 setsid nohup pnpm tauri dev > /tmp/tsukue-dev.log 2>&1 &
-echo "started, log /tmp/tsukue-dev.log"
+echo $! > "$PIDFILE"
+echo "started (pgid $(cat "$PIDFILE")), log /tmp/tsukue-dev.log"

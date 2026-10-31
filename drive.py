@@ -3,12 +3,12 @@
 
   ./drive.py 'return t.text("#root").length'
   ./drive.py -f script.js          # whole file as one async body
-  ./drive.py --shot out.png        # grim screenshot of the Tsukue window
+  ./drive.py --shot out.png        # grim screenshot of the dev Tsukue window
 
 The code runs as an async function body with `t` bound to the helpers in
 src/app/driver.ts (t.tabs, t.store, t.q, t.byText, t.sleep, t.text, t.toasts...).
 """
-import json, socket, subprocess, sys
+import json, os, socket, subprocess, sys
 
 SOCK = "/tmp/tsukue-driver.sock"
 
@@ -24,9 +24,17 @@ def run(code: str):
     except json.JSONDecodeError:
         return {"__raw": line}
 
+def is_dev(pid: int) -> bool:
+    """True for the dev build (target/debug/tsukue), not the packaged /usr/bin/tsukue."""
+    try:
+        return "/target/" in os.readlink(f"/proc/{pid}/exe")
+    except OSError:
+        return False
+
 def shot(path: str):
     clients = json.loads(subprocess.check_output(["hyprctl", "clients", "-j"]))
-    win = next(c for c in clients if c["class"] == "tsukue")
+    mine = [c for c in clients if c["class"] == "tsukue"]
+    win = next((c for c in mine if is_dev(c["pid"])), None) or mine[0]
     x, y = win["at"]; w, h = win["size"]
     subprocess.check_call(["grim", "-g", f"{x},{y} {w}x{h}", path])
     return path

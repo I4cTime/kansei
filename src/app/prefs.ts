@@ -8,6 +8,8 @@
 //   sidebarWidth:     number               expanded sidebar width in px (220..520)
 //   sidebarCollapsed: boolean              true = 44 px icon rail
 //   sidebarSection:   string | null        id of the active sidebar panel
+//   pinnedProjects:   string[]             folders pinned in the Projects panel (absolute paths)
+//   hiddenProjects:   string[]             folders hidden from the Projects panel's default views
 //
 // Usage from a panel:
 //   const prefs = useAtomValue(prefsAtom);
@@ -30,6 +32,8 @@ export type Prefs = {
   sidebarWidth: number;
   sidebarCollapsed: boolean;
   sidebarSection: string | null;
+  pinnedProjects: string[];
+  hiddenProjects: string[];
 };
 
 export const SIDEBAR_DEFAULT = 300;
@@ -45,6 +49,8 @@ export const DEFAULT_PREFS: Prefs = {
   sidebarWidth: SIDEBAR_DEFAULT,
   sidebarCollapsed: false,
   sidebarSection: null,
+  pinnedProjects: [],
+  hiddenProjects: [],
 };
 
 export const prefsAtom = atom<Prefs>(DEFAULT_PREFS);
@@ -53,6 +59,14 @@ export const prefsLoadedAtom = atom(false);
 
 export function clampSidebar(w: number): number {
   return Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w)));
+}
+
+/** Strings only, trimmed, empty and duplicate entries dropped, order kept. */
+function stringList(v: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(v)) return fallback;
+  const out: string[] = [];
+  for (const x of v) if (typeof x === "string" && x.trim() && !out.includes(x.trim())) out.push(x.trim());
+  return out;
 }
 
 /** Coerce unknown JSON into a valid Prefs, falling back to defaults per field. */
@@ -70,6 +84,8 @@ export function sanitizePrefs(raw: unknown): Prefs {
     sidebarWidth: typeof r.sidebarWidth === "number" ? clampSidebar(r.sidebarWidth) : d.sidebarWidth,
     sidebarCollapsed: typeof r.sidebarCollapsed === "boolean" ? r.sidebarCollapsed : d.sidebarCollapsed,
     sidebarSection: typeof r.sidebarSection === "string" ? r.sidebarSection : d.sidebarSection,
+    pinnedProjects: stringList(r.pinnedProjects, d.pinnedProjects),
+    hiddenProjects: stringList(r.hiddenProjects, d.hiddenProjects),
   };
 }
 

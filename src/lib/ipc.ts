@@ -72,6 +72,16 @@ export type Session = {
   live: { pid: number; status: string | null; name: string | null; cwd: string | null } | null;
 };
 
+/** projects_info result (CONTRACT.md "Projects"): stat-only facts about one folder. */
+export type ProjectsInfo = {
+  path: string;
+  /** Symlinks resolved; null when the folder does not exist. */
+  canonical: string | null;
+  /** True when the path is a directory. */
+  exists: boolean;
+  flags: { claudeMd: boolean; claudeDir: boolean; mcpJson: boolean; git: boolean };
+};
+
 export const pty = {
   spawn: (a: { cwd: string; command: string; args: string[]; cols: number; rows: number }) =>
     invoke<{ id: string; pid?: number | null }>("pty_spawn", a),
@@ -101,6 +111,11 @@ export const memory = {
 
 export const sessions = {
   list: () => invoke<Session[]>("sessions_list"),
+};
+
+export const projects = {
+  /** Stat each absolute path (max 500 per call; relative paths are skipped). Registers nothing. */
+  info: (paths: string[]) => invoke<ProjectsInfo[]>("projects_info", { paths }),
 };
 
 export const project = {

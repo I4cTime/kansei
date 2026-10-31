@@ -4,7 +4,7 @@
 // helpers below and the JSON result is handed back through driver_result.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { pty, files, memory, mcp, project as projectIpc } from "../lib/ipc";
+import { pty, files, memory, mcp, projects as projectsIpc, sessions as sessionsIpc, project as projectIpc } from "../lib/ipc";
 import { projectAtom, refreshProject } from "./project";
 import * as terminals from "./terminals";
 import * as tabs from "./tabs";
@@ -12,6 +12,8 @@ import { store } from "./store";
 import { prefsAtom, savePrefs, setPrefs } from "./prefs";
 import { overlayAtom, toastsAtom } from "../lib/overlay";
 import { dismissOverlay } from "./keyboard";
+import * as projectActions from "../panels/projects/actions";
+import { sessionsProjectFilterAtom } from "../panels/sessions/model";
 
 declare global {
   interface Window {
@@ -33,8 +35,11 @@ export function installDriver() {
     dismissOverlay,
     invoke,
     listen,
-    ipc: { pty, files, memory, mcp, project: projectIpc },
+    ipc: { pty, files, memory, mcp, projects: projectsIpc, sessions: sessionsIpc, project: projectIpc },
     project: { projectAtom, refreshProject },
+    /** Projects panel pin / hide helpers (addProjectWithPicker opens a native dialog). */
+    projects: projectActions,
+    sessionsProjectFilterAtom,
     terminals,
     /** querySelector that throws a readable error when nothing matches. */
     q(sel: string): HTMLElement {

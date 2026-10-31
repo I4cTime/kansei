@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAtomValue } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { Play, Trash } from "lucide-react";
 import { files, pty, sessions, type Session } from "../../lib/ipc";
 import { activateTab, openTab, tabsAtom } from "../../app/tabs";
@@ -15,6 +15,7 @@ import {
   projectLabel,
   projectOptions,
   relativeTime,
+  sessionsProjectFilterAtom,
   type SessionGroup,
 } from "./model";
 
@@ -73,6 +74,15 @@ export function SessionsPanel() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [preset, setPreset] = useAtom(sessionsProjectFilterAtom);
+
+  // Another panel (Projects) asked for this project's sessions.
+  useEffect(() => {
+    if (preset === null) return;
+    setProject(preset);
+    setQ("");
+    setPreset(null);
+  }, [preset, setPreset]);
 
   const list = data?.list ?? [];
   const home = data?.home;

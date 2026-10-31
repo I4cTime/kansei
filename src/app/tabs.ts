@@ -18,10 +18,13 @@ function titleFor(cwd: string): string {
   return basename(cwd);
 }
 
+/** What a "shell" tab runs (prefs.newTabCommand = "shell", or a panel's Shell action). */
+export const SHELL_COMMAND = { command: "/bin/bash", args: ["-l"] } as const;
+
 /** Command for a new tab from prefs.newTabCommand. */
 export function newTabCommand(): { command: string; args: string[] } {
   return store.get(prefsAtom).newTabCommand === "shell"
-    ? { command: "/bin/bash", args: ["-l"] }
+    ? { command: SHELL_COMMAND.command, args: [...SHELL_COMMAND.args] }
     : { command: "claude", args: [] };
 }
 

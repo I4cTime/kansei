@@ -10,10 +10,11 @@ Tauri 2 + React 19 + Tailwind v4 + xterm.js. Working name, may change.
 | SIDEBAR     | [ q-ring ] [ aibou ] [ niwa ] [+]        <- tab rail|
 | (Claude     |----------------------------------------------------|
 |  items)     |                                                    |
-|  Sessions   |                xterm terminal                      |
-|  Memory     |                                                    |
-|  MCPs       |                (one per tab, pty runs `claude`     |
-|  Agents     |                 in the tab's folder)               |
+|  Projects   |                xterm terminal                      |
+|  Sessions   |                                                    |
+|  Memory     |                (one per tab, pty runs `claude`     |
+|  MCPs       |                 in the tab's folder)               |
+|  Agents     |                                                    |
 |  Skills     |                                                    |
 |  Workflows  |                                                    |
 |  Hooks      |                                                    |
@@ -38,7 +39,7 @@ Tauri 2 + React 19 + Tailwind v4 + xterm.js. Working name, may change.
 - Ctrl+Shift+T new tab, Ctrl+Shift+W close tab
 - Ctrl+PageUp / Ctrl+PageDown previous / next tab
 - Ctrl+Shift+B toggle sidebar collapse
-- Ctrl+Shift+1..8 jump to sidebar section (Sessions, Memory, MCPs, Agents, Skills, Workflows, Hooks, Settings)
+- Ctrl+Shift+1..9 jump to sidebar section (Projects, Sessions, Memory, MCPs, Agents, Skills, Workflows, Hooks, Settings)
 - Esc closes the editor sheet, Ctrl+S saves inside it
 
 ## Rust commands (all `#[tauri::command]`, args are camelCase JSON objects)
@@ -129,7 +130,8 @@ a run copy the file to `~/.claude.json.tsukue-bak`.
 - `tabs.json`: `{ version: 1, active: number, tabs: { title, cwd, command, args }[] }`
   saved on every change, restored at launch (each restored tab re-spawns its
   pty). Dead tabs (pty exited) show a "restart" affordance in the terminal area.
-- `prefs.json`: `{ newTabCommand: "claude" | "shell", fontSize: number, fontFamily: string, theme: "system" | "dark" | "light" }`.
+- `prefs.json`: `{ newTabCommand: "claude" | "shell", fontSize: number, fontFamily: string, theme: "system" | "dark" | "light",
+  sidebarWidth, sidebarCollapsed, sidebarSection, pinnedProjects: string[], hiddenProjects: string[] }` (see `src/app/prefs.ts`).
 
 ## Visual language
 
@@ -172,7 +174,7 @@ for the terminal (Omarchy ships it).
 
 ## Sessions (added 2026-10-31)
 
-Sidebar section "Sessions", first in the nav (Ctrl+Shift+1; the others shift).
+Sidebar section "Sessions", second in the nav after Projects (Ctrl+Shift+2; it was first until Projects arrived).
 
 Sources, all read-only:
 - `~/.claude/history.jsonl`: one JSON line per prompt `{ display, timestamp (ms), project (real path), sessionId }`.
@@ -240,3 +242,60 @@ Front end:
 - Memory panel: the project selector defaults to the entry whose guessedPath
   equals the active tab's root (falling back to home), and follows tab changes
   until the user picks manually.
+
+## Projects (added 2026-10-31)
+
+Sidebar section "Projects", first in the nav (Ctrl+Shift+1; Sessions is now 2,
+the rest follow up to Settings on 9). A project is a folder a Claude Code
+session ran in, plus folders the user adds.
+
+Sources, unioned by canonical folder (symlinked spellings of one folder merge
+into one row; a row remembers every spelling as `aliases`):
+- `sessions_list`: every distinct non-null `project`. Gives the session count,
+  live count (sessions with `live`), last activity (max `lastTs`) and "Resume
+  last" (the newest session that has a transcript and is not running).
+- `memory_projects`: entries with a resolved `guessedPath` add their memory
+  file count (`fileCount`, minus MEMORY.md). Unresolved ones are left out.
+- prefs `pinnedProjects`: folders pinned from the list or added with the folder
+  picker (Add folder). They show even without sessions or memory.
+- prefs `hiddenProjects`: folders hidden from the Pinned and Recent views.
+  Pinning removes a folder from hidden and hiding unpins it; if prefs.json
+  lists a folder in both, pinned wins.
+
+Both prefs are arrays of absolute paths (trimmed, deduplicated, non-strings
+dropped by `sanitizePrefs`), written through `savePrefs`.
+
+Rust command `projects_info` `{ paths: string[] }` -> `ProjectsInfo[]`
+(`src-tauri/src/projects.rs`):
+```
+{ path, canonical: string | null, exists: boolean /* is a directory */,
+  flags: { claudeMd, claudeDir, mcpJson, git }: boolean }
+```
+Stat-only (no file reads), so it needs no allowlist and never registers a
+project root. Relative paths are skipped, duplicates dropped, at most 500 paths
+per call (the panel chunks). `claudeMd` = `CLAUDE.md` is a file, `claudeDir` =
+`.claude/` is a directory (not counted for home, whose `.claude` is the user
+config), `mcpJson` = `.mcp.json` is a file, `git` = `.git` exists (file or dir).
+
+Panel:
+- Same loading as Sessions: manual load with the spinner, silent refresh every
+  15 s while the document is visible, toast only on a new failure. Folders
+  pinned between loads get their facts fetched right away.
+- Search box (all words, case-insensitive, over label and path) and a filter:
+  Pinned, Recent (default: pinned group first, then the rest by last activity;
+  hidden rows left out) and All (adds a Hidden group, rows dimmed with Unhide).
+  Missing folders sort last in each group. Add folder opens the folder picker
+  and pins the choice.
+- Row: label (Sessions' rule: basename, `~` for home, parent appended when
+  basenames collide), pin icon, LIVE badge when a session is running, path with
+  `~`, relative last activity, badges "N sessions", "N memory" (when > 0) and
+  chips CLAUDE.md / .claude / mcp. Missing folders get "(missing folder)" and
+  their Open, Shell and Resume actions are disabled. The row whose path equals
+  the active tab's project root shows "in tab <title>" in the ok colour.
+- Actions (on hover or focus): Open (new tab running prefs.newTabCommand),
+  Shell (`/bin/bash -l`), Resume last (`claude --resume <id>`, tab titled
+  "<label> (resumed)"), Sessions (sets `sessionsProjectFilterAtom` in
+  `src/panels/sessions/model.ts` and switches the sidebar to Sessions, which
+  applies it as its project filter and clears it), Pin / Unpin, Hide / Unhide.
+- Dev driver: `t.projects.{pinProject, unpinProject, hideProject, unhideProject}`
+  and `t.sessionsProjectFilterAtom`.

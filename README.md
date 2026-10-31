@@ -27,6 +27,11 @@ a debug-only socket that runs JavaScript inside the webview for UI checks:
 ./drive.py --shot /tmp/tsukue.png
 ```
 
+`run-dev.sh` records the dev process group in `/tmp/tsukue-dev.pid` and on the
+next run stops only that group (plus whatever holds the Vite port 1420), never
+processes by name, so an installed `tsukue` keeps running. `drive.py --shot`
+prefers the dev window (`target/debug/tsukue`) when both are open.
+
 `TSUKUE_DATA_DIR=/some/dir` runs an instance with its own tabs.json and
 prefs.json (useful for trying the release binary while a dev instance runs).
 
@@ -54,6 +59,6 @@ cd src-tauri && cargo build && cargo test && cargo clippy --all-targets
 ## Keyboard
 
 Ctrl+Shift+T new tab, Ctrl+Shift+W close, Ctrl+PageUp/PageDown switch,
-Ctrl+Shift+B toggle sidebar, Ctrl+Shift+1..8 jump to a section, Esc closes
+Ctrl+Shift+B toggle sidebar, Ctrl+Shift+1..9 jump to a section, Esc closes
 the editor sheet, Ctrl+S saves in it, Ctrl+Shift+C / V copy and paste in the
 terminal.

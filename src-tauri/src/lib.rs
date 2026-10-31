@@ -1,6 +1,7 @@
 mod files;
 mod mcp;
 mod memory;
+mod projects;
 mod pty;
 mod sessions;
 
@@ -39,6 +40,7 @@ pub fn run() {
             mcp::mcp_upsert,
             mcp::mcp_remove,
             sessions::sessions_list,
+            projects::projects_info,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
