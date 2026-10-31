@@ -10,7 +10,8 @@ Tauri 2 + React 19 + Tailwind v4 + xterm.js. Working name, may change.
 | SIDEBAR     | [ q-ring ] [ aibou ] [ niwa ] [+]        <- tab rail|
 | (Claude     |----------------------------------------------------|
 |  items)     |                                                    |
-|  Memory     |                xterm terminal                      |
+|  Sessions   |                xterm terminal                      |
+|  Memory     |                                                    |
 |  MCPs       |                (one per tab, pty runs `claude`     |
 |  Agents     |                 in the tab's folder)               |
 |  Skills     |                                                    |
@@ -37,7 +38,7 @@ Tauri 2 + React 19 + Tailwind v4 + xterm.js. Working name, may change.
 - Ctrl+Shift+T new tab, Ctrl+Shift+W close tab
 - Ctrl+PageUp / Ctrl+PageDown previous / next tab
 - Ctrl+Shift+B toggle sidebar collapse
-- Ctrl+Shift+1..7 jump to sidebar section
+- Ctrl+Shift+1..8 jump to sidebar section (Sessions, Memory, MCPs, Agents, Skills, Workflows, Hooks, Settings)
 - Esc closes the editor sheet, Ctrl+S saves inside it
 
 ## Rust commands (all `#[tauri::command]`, args are camelCase JSON objects)
@@ -48,11 +49,11 @@ Errors are returned as `Err(String)`; the front end shows them in a toast.
 
 | command | args | returns |
 |---|---|---|
-| `pty_spawn` | `{ cwd: string, command: string, args: string[], cols: number, rows: number }` | `{ id: string }` |
+| `pty_spawn` | `{ cwd: string, command: string, args: string[], cols: number, rows: number }` | `{ id: string, pid: number \| null }` |
 | `pty_write` | `{ id, data: string }` | `null` |
 | `pty_resize` | `{ id, cols, rows }` | `null` |
 | `pty_kill` | `{ id }` | `null` |
-| `pty_list` | `{}` | `{ id, cwd, command, alive: boolean }[]` |
+| `pty_list` | `{}` | `{ id, cwd, command, alive: boolean, pid: number \| null }[]` |
 
 Events emitted on the main window:
 
