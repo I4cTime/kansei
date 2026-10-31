@@ -137,3 +137,34 @@ Dark by default, light via `prefers-color-scheme` or the `theme` pref
 terminal theme is derived from them in `src/app/terminalTheme.ts`. No em dashes
 anywhere in copy. Font: system UI for chrome, `JetBrainsMono Nerd Font, monospace`
 for the terminal (Omarchy ships it).
+
+## Backend behaviour notes (as implemented, 2026-10-31)
+
+- `~/.claude/.credentials.json` is always refused (read, write, delete, also via symlink).
+- Reads, lists and exists under `~/.claude/` follow symlinks out of the tree (Omarchy
+  links some skills into /usr/share/omarchy). Writes, mkdir and delete must still
+  canonicalise inside the allowlist. Delete removes a link itself, not its target.
+- Paths must be absolute (`~` is expanded); any `..` component is refused.
+  `fs_delete` refuses directories and `~/.claude.json`. `fs_read_text` refuses
+  files over 32 MiB or non-UTF-8 content.
+- Error strings: `path not allowed: <path>`, `pty not found: <id>`,
+  `pty has exited: <id>`, `cwd does not exist or is not a directory: ...`,
+  `could not start <cmd>: ...`, `MCP server not found: <name>`,
+  `project scope needs a project path`, `server config must be a JSON object`.
+- `mcp_upsert` with project scope creates `projects.<path>` when missing. Key
+  order is preserved (serde_json preserve_order + float_roundtrip, verified
+  byte-identical against the live file).
+- `fs_write_text` to `~/.claude.json` shares the MCP lock and the one-time
+  `~/.claude.json.tsukue-bak` backup.
+- `memory_projects` lists only `projects/*` with a `memory/` dir; the decoder
+  treats every non-alphanumeric character as `-` (Claude Code's encoding) and
+  backtracks; `guessedPath` is null unless the whole path resolves.
+- PTY: output can arrive before `pty_spawn` returns, so the front end keeps one
+  global listener and buffers unknown ids. `pty:exit` also fires after
+  `pty_kill`. A signal-killed child reports code 1. `pty_kill` sends SIGHUP then
+  SIGKILL after 3 s. Env drops `CLAUDECODE` and `CLAUDE_CODE_ENTRYPOINT` so a
+  tab's `claude` does not think it is nested; AppImage library variables are
+  stripped.
+- Known gaps: CSP is still null; MCP `env` values reach the webview (masked in
+  the UI behind an eye toggle); a running `claude` can rewrite `~/.claude.json`
+  over an MCP edit, so restart sessions after editing MCPs.
