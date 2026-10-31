@@ -7,7 +7,9 @@
 //! generated `PROJECTS.md`.
 //!
 //! Rules:
-//! - depth 1 under a root: every directory is a `group`; files are ignored;
+//! - depth 1 under a root: a directory with a marker is a `project` (monorepo
+//!   and worktree rules apply), every other directory is a `group`; files are
+//!   ignored;
 //! - depth 2: a directory with a marker (`.git`, `CLAUDE.md`, `.claude/`) is a
 //!   `project`; one without markers whose direct subdirectories include marker
 //!   folders is a wrapper `group` of those (the other subdirectories are
@@ -149,6 +151,17 @@ impl Scanner<'_> {
             .unwrap_or_else(|| s(path));
         let mut root = self.node(path, name, Kind::Root)?;
         for (name, dir) in subdirs(path) {
+            // A depth-1 folder that is a project itself (e.g. a marketing repo)
+            // is a project, with the usual monorepo and worktree rules.
+            if self.flags(&dir).is_project() {
+                match self.project(&dir, name) {
+                    Some(n) => {
+                        root.children.push(n);
+                        continue;
+                    }
+                    None => break,
+                }
+            }
             let Some(mut group) = self.node(&dir, name, Kind::Group) else {
                 break;
             };
@@ -507,6 +520,10 @@ mod tests {
         touch(&root.join("FOCUS.md"));
         mk(&root.join(".hidden-group/x/.git"));
         mk(&root.join("node_modules/pkg"));
+        // marketing: a repo at depth 1 with plain folders inside.
+        mk(&root.join("marketing/.git"));
+        mk(&root.join("marketing/aibou/shorts"));
+        mk(&root.join("marketing/inner/.git"));
         // products: a project with an inner repo, a wrapper, a plain folder.
         let products = root.join("products");
         mk(&products.join("aibou/.git"));
@@ -559,8 +576,18 @@ mod tests {
         assert_eq!(r.name, "Develop");
         assert_eq!(r.path, s(&root));
         // Files, hidden dirs and skipped names are not groups; order is case-insensitive.
-        assert_eq!(names(r), ["empty", "lab", "products", "sites"]);
-        assert!(r.children.iter().all(|g| g.kind == Kind::Group));
+        assert_eq!(names(r), ["empty", "lab", "marketing", "products", "sites"]);
+        let marketing = child(r, "marketing");
+        assert_eq!(marketing.kind, Kind::Project, "a depth-1 repo is a project");
+        assert!(marketing.children.is_empty());
+        assert!(marketing.flags.is_project());
+        assert_eq!(child(r, "products").kind, Kind::Group);
+        assert!(
+            r.children
+                .iter()
+                .filter(|g| g.name != "marketing")
+                .all(|g| g.kind == Kind::Group)
+        );
         assert!(child(r, "empty").children.is_empty());
 
         let products = child(r, "products");
@@ -708,6 +735,8 @@ mod tests {
         assert!(paths.contains(&root.join("products/mine/mineui")));
         assert!(paths.contains(&root.join("sites/i4c-sites/apps/sparkle")));
         assert!(paths.contains(&root.join("lab/feature-specs")));
+        assert!(paths.contains(&root.join("marketing")));
+        assert!(!paths.contains(&root.join("marketing/aibou")));
         assert!(!paths.contains(&root.join("products")));
         assert!(!paths.contains(&root.join("products/mine")));
 
@@ -737,7 +766,8 @@ mod tests {
             assert!(json.get(key).is_some(), "missing {key}");
         }
         assert!(json["flags"].get("claudeMd").is_some());
-        let products = &json["children"][2];
+        assert_eq!(json["children"][2]["kind"], "project");
+        let products = &json["children"][3];
         assert_eq!(products["kind"], "group");
         assert_eq!(products["children"][0]["kind"], "project");
     }

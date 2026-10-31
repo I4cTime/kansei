@@ -344,7 +344,9 @@ the only file read; everything else is stat only.
 Scan rules:
 - Markers that make a folder a project: `.git` (dir or file), `CLAUDE.md` (file),
   `.claude/` (dir; never for home).
-- Depth 1 under a root: every directory is a `group`. Files are ignored.
+- Depth 1 under a root: a directory with markers is a `project` (through the
+  same project rule, so monorepo and worktree rules apply; e.g. `marketing`,
+  a repo of its own); every other directory is a `group`. Files are ignored.
 - Depth 2: a directory with markers is a `project`. One without markers whose
   direct subdirectories include marker folders is a wrapper `group` of those
   (as `project`s); its other subdirectories are ignored. One with neither is a
@@ -422,6 +424,8 @@ the file is left alone.
   all their subprojects, and a hidden subproject is left out on its own; their
   registry entries stay in workspaces.json. Hiding, unhiding, pinning and
   unpinning re-render and write only when the text changed, like an edit.
+  Projects directly under the root come first, as one block right after the
+  intro paragraph (blank line before it, no heading, same line format).
   One `##` per group that has projects (blank line before each), wrapper
   projects listed in their group in tree order, subprojects indented two spaces
   under their project. Status and description parts are omitted when empty;
@@ -441,7 +445,7 @@ the file is left alone.
    relative path.
 2. Pinned section (when any).
 3. Tree (Tree view): per root a sticky header (`~/Develop`, project count,
-   collapse), groups as collapsible headers with a count, wrapper groups nested
+   collapse), then projects directly under the root as rows, then groups as collapsible headers with a count, wrapper groups nested
    one level deeper, projects as rows (name, path relative to the root,
    description line, status chip, flag chips, sessions / memory / LIVE badges,
    related chips), subprojects indented under their project behind a toggle

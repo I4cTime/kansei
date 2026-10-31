@@ -24,6 +24,7 @@ import {
   indexTree,
   pickItems,
   relatedName,
+  rootParts,
   type ProjectStatus,
   type RegistryEntry,
   type TreeRef,
@@ -494,7 +495,9 @@ function TreeView({
               <span className="flex-1" />
               {closed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
             </button>
-            {!closed && root.children.map((g) => group(g, 0))}
+            {/* Projects directly under the root (a depth-1 repo) first, then the groups. */}
+            {!closed && rootParts(root).top.map((p) => project(p, 0))}
+            {!closed && rootParts(root).groups.map((g) => group(g, 0))}
           </div>
         );
       })}

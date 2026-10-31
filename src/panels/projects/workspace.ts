@@ -78,7 +78,7 @@ export type TreeRef = {
   root: string;
   /** Path relative to the root. */
   rel: string;
-  /** Depth-1 group under the root (products, sites, ...). */
+  /** Depth-1 group under the root (products, sites, ...); "" for a project directly under the root. */
   group: string;
   /** The project above a subproject, else null. */
   parent: WorkspaceNode | null;
@@ -94,15 +94,29 @@ export function groupProjects(group: WorkspaceNode): WorkspaceNode[] {
   return group.children.flatMap((c) => (c.kind === "group" ? c.children.filter((x) => x.kind === "project") : c.kind === "project" ? [c] : []));
 }
 
+/**
+ * A root's children split into projects directly under it (a depth-1 folder
+ * that is a repo, like a marketing repo) and its groups, each in tree order.
+ */
+export function rootParts(root: WorkspaceNode): { top: WorkspaceNode[]; groups: WorkspaceNode[] } {
+  return { top: root.children.filter((c) => c.kind === "project"), groups: root.children.filter((c) => c.kind === "group") };
+}
+
+/** Root-level projects (group "") then each group's projects, with the group name. */
+function rootSections(root: WorkspaceNode): { group: string; projects: WorkspaceNode[] }[] {
+  const { top, groups } = rootParts(root);
+  return [{ group: "", projects: top }, ...groups.map((g) => ({ group: g.name, projects: groupProjects(g) }))];
+}
+
 /** Every project and subproject by path. */
 export function indexTree(tree: WorkspaceNode[]): Map<string, TreeRef> {
   const out = new Map<string, TreeRef>();
   for (const root of tree) {
-    for (const group of root.children) {
-      for (const p of groupProjects(group)) {
-        out.set(p.path, { node: p, root: root.path, rel: relPath(root.path, p.path), group: group.name, parent: null });
+    for (const { group, projects } of rootSections(root)) {
+      for (const p of projects) {
+        out.set(p.path, { node: p, root: root.path, rel: relPath(root.path, p.path), group, parent: null });
         for (const sub of p.children) {
-          if (sub.kind === "subproject") out.set(sub.path, { node: sub, root: root.path, rel: relPath(root.path, sub.path), group: group.name, parent: p });
+          if (sub.kind === "subproject") out.set(sub.path, { node: sub, root: root.path, rel: relPath(root.path, sub.path), group, parent: p });
         }
       }
     }
@@ -152,14 +166,15 @@ export const PROJECTS_MD_NOTE =
 export function renderProjectsMd(root: WorkspaceNode, reg: Registry, index: Map<string, TreeRef>, home?: string, hidden: (path: string) => boolean = () => false): string {
   const entries = reg[root.path] ?? {};
   const lines = [`# Projects in ${tildify(root.path, home)}`, PROJECTS_MD_NOTE];
-  for (const group of root.children) {
+  // Root-level projects come first as one block without a heading, then one ## per group.
+  for (const { group, projects } of rootSections(root)) {
     const items: string[] = [];
-    for (const p of groupProjects(group)) {
+    for (const p of projects) {
       if (hidden(p.path)) continue;
       items.push(mdLine(p, 0, root.path, entries, index, home));
       for (const sub of p.children) if (sub.kind === "subproject" && !hidden(sub.path)) items.push(mdLine(sub, 1, root.path, entries, index, home));
     }
-    if (items.length > 0) lines.push("", `## ${group.name}`, ...items);
+    if (items.length > 0) lines.push("", ...(group ? [`## ${group}`] : []), ...items);
   }
   return lines.join("\n") + "\n";
 }
@@ -167,7 +182,7 @@ export function renderProjectsMd(root: WorkspaceNode, reg: Registry, index: Map<
 // ---------------------------------------------------------------------------
 // Tree filtering for the panel
 
-/** Number of projects in a node (wrappers counted through, subprojects not). */
+/** Number of projects in a node (wrappers counted through, subprojects not; a root-level project counts like any other). */
 export function countProjects(n: WorkspaceNode): number {
   if (n.kind === "project") return 1;
   if (n.kind === "subproject") return 0;
@@ -176,7 +191,8 @@ export function countProjects(n: WorkspaceNode): number {
 
 /**
  * Prune the trees for display. `visible(path)` drops a project or subproject
- * (hidden rows); with `matches` (a search), a project stays when it or one of
+ * (hidden rows) at any depth, root-level projects included; with `matches`
+ * (a search), a project stays when it or one of
  * its subprojects matches, and only matching subprojects stay. Groups without
  * projects left are dropped while searching; without a search they stay.
  */
@@ -199,14 +215,17 @@ export function filterTree(tree: WorkspaceNode[], visible: (path: string) => boo
 /** Flat list of pickable projects for the Related and Open with sheets, in tree order. */
 export type PickItem = { path: string; name: string; rel: string; heading: string; depth: 0 | 1 };
 
-/** Headings are group names, prefixed with the root's folder name when there are several roots. */
+/**
+ * Headings are group names, prefixed with the root's folder name when there are
+ * several roots; projects directly under a root are headed by the root's name.
+ */
 export function pickItems(tree: WorkspaceNode[], home?: string): PickItem[] {
   const out: PickItem[] = [];
   for (const root of tree) {
     const rootLabel = basename(root.path) || tildify(root.path, home);
-    for (const group of root.children) {
-      const heading = tree.length > 1 ? `${rootLabel}/${group.name}` : group.name;
-      for (const p of groupProjects(group)) {
+    for (const { group, projects } of rootSections(root)) {
+      const heading = !group ? rootLabel : tree.length > 1 ? `${rootLabel}/${group}` : group;
+      for (const p of projects) {
         out.push({ path: p.path, name: p.name, rel: relPath(root.path, p.path), heading, depth: 0 });
         for (const sub of p.children) if (sub.kind === "subproject") out.push({ path: sub.path, name: sub.name, rel: relPath(root.path, sub.path), heading, depth: 1 });
       }
