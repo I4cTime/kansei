@@ -168,3 +168,39 @@ for the terminal (Omarchy ships it).
 - Known gaps: CSP is still null; MCP `env` values reach the webview (masked in
   the UI behind an eye toggle); a running `claude` can rewrite `~/.claude.json`
   over an MCP edit, so restart sessions after editing MCPs.
+
+## Sessions (added 2026-10-31)
+
+Sidebar section "Sessions", first in the nav (Ctrl+Shift+1; the others shift).
+
+Sources, all read-only:
+- `~/.claude/history.jsonl`: one JSON line per prompt `{ display, timestamp (ms), project (real path), sessionId }`.
+  Grouped by sessionId it gives the title (first `display`, trimmed to 120 chars),
+  first/last timestamp, prompt count and the project path.
+- `~/.claude/sessions/<pid>.json`: live sessions `{ pid, sessionId, cwd, startedAt, status, name, kind, version }`.
+  A session is live only if the pid is still running (check `/proc/<pid>`).
+- `~/.claude/projects/<encoded>/<sessionId>.jsonl`: the transcript; its presence
+  makes the session resumable; size and mtime come from the file.
+
+Rust command `sessions_list` `{}` -> `Session[]`:
+```
+{ id, project: string | null, title: string, firstTs: number | null, lastTs: number,
+  prompts: number, transcriptPath: string | null, transcriptBytes: number,
+  live: { pid, status, name, cwd } | null }
+```
+Union of history sessions and transcript files (transcript-only sessions get the
+title "(no prompt recorded)" and the project decoded from the encoded dir via the
+memory decoder). Sorted by lastTs desc. Sessions with neither a transcript nor a
+live process are dropped.
+
+`pty_spawn` also returns `pid` (the child's pid) and `pty_list` includes it, so
+the panel can mark a live session as "open in tab <title>" by matching pids
+(the live pid is `claude` itself, which is the pty child when the tab command is
+`claude`).
+
+Panel: search box, project filter (all / one project, labels = basename, grouped
+by project when "all"), rows = title, relative time, prompt count, size, LIVE
+badge when running (plus "in tab X" when it is one of ours). Actions: Resume
+(opens a tab in `project` running `claude --resume <id>`; disabled while live),
+Delete transcript (inline confirm, `fs_delete` of the jsonl; refused while live).
+Tabs opened by Resume are titled "<basename> (resumed)".
