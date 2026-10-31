@@ -3,3 +3,7 @@ dist
 src-tauri/target
 src-tauri/gen/schemas
 *.log
+packaging/arch/*.pkg.tar.zst
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/tsukue/

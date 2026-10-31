@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Tsukue
+Comment=Claude Code cockpit
+Exec=tsukue
+Icon=tsukue
+Terminal=false
+Categories=Development;
+StartupWMClass=tsukue

@@ -1,0 +1,71 @@
+# Maintainer: I4C Studio <i4c.studio.dev@gmail.com>
+
+pkgname=tsukue
+pkgver=0.1.0.r19.g5418fcd
+pkgrel=1
+pkgdesc='Claude Code cockpit: terminal tabs plus a sidebar that edits Claude memory, MCP servers, agents, skills, hooks and settings'
+arch=('x86_64')
+url='https://github.com/I4cTime/tsukue'
+# The repo has no LICENSE file yet, so no licence text is installed.
+license=('custom')
+depends=(
+  'webkit2gtk-4.1'
+  'gtk3'
+  'cairo'
+  'gdk-pixbuf2'
+  'glib2'
+  'libsoup3'
+  'dbus'
+  'gcc-libs'
+  'glibc'
+  'hicolor-icon-theme'
+)
+makedepends=('cargo' 'nodejs' 'pnpm' 'git')
+optdepends=('claude-code: the CLI the terminal tabs run')
+# Cargo's release profile already strips the binary, so a debug package
+# would be empty.
+options=('!debug')
+# Local build from the committed checkout. A release PKGBUILD would use the
+# GitHub tarball instead, e.g.
+#   source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+source=("$pkgname::git+file:///home/i4ctime/Develop/lab/tsukue"
+        'tsukue.desktop')
+sha256sums=('SKIP'
+            'b4bcbf7821d88389c2c7c62eb31202eb89218942f7c42a0dffca9150cce2dd75')
+
+pkgver() {
+  cd "$pkgname"
+  ( set -o pipefail
+    git describe --long --tags 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+  ) ||
+    printf '0.1.0.r%s.g%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+prepare() {
+  cd "$pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  pnpm install --frozen-lockfile
+  cargo fetch --locked --manifest-path src-tauri/Cargo.toml \
+    --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR="$srcdir/$pkgname/src-tauri/target"
+  # Runs beforeBuildCommand (pnpm build) for the frontend, then a cargo
+  # release build. No deb/rpm/AppImage bundles.
+  pnpm tauri build --no-bundle -- --frozen
+}
+
+package() {
+  cd "$pkgname"
+  install -Dm755 src-tauri/target/release/tsukue "$pkgdir/usr/bin/tsukue"
+  install -Dm644 "$srcdir/tsukue.desktop" "$pkgdir/usr/share/applications/tsukue.desktop"
+  install -Dm644 src-tauri/icons/32x32.png "$pkgdir/usr/share/icons/hicolor/32x32/apps/tsukue.png"
+  install -Dm644 src-tauri/icons/128x128.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/tsukue.png"
+  install -Dm644 src-tauri/icons/128x128@2x.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/tsukue.png"
+  if [[ -f LICENSE ]]; then
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  fi
+}

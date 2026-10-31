@@ -30,6 +30,20 @@ a debug-only socket that runs JavaScript inside the webview for UI checks:
 `TSUKUE_DATA_DIR=/some/dir` runs an instance with its own tabs.json and
 prefs.json (useful for trying the release binary while a dev instance runs).
 
+## Packaging
+
+An Arch Linux package builds from the committed state of this checkout (not
+uncommitted edits), so commit first:
+
+```sh
+cd packaging/arch && makepkg -si
+```
+
+That installs `/usr/bin/tsukue`, a desktop entry and hicolor icons. Node and
+pnpm from mise are not pacman packages, so `makepkg -si` would try to install
+the repo `nodejs` and `pnpm`; to build with the mise ones instead, use
+`makepkg -f --nodeps` and then `sudo pacman -U tsukue-*.pkg.tar.zst`.
+
 ## Checks
 
 ```sh
