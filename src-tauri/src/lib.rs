@@ -1,3 +1,4 @@
+mod board;
 mod files;
 mod mcp;
 mod memory;
@@ -21,6 +22,7 @@ pub fn run() {
         .setup(|app| {
             driver::start(app.handle());
             watchdog::start(app.handle());
+            board::startup_render();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -51,6 +53,16 @@ pub fn run() {
             workspace::workspace_scan,
             workspace::workspace_claude_md,
             workspace::project_additional_dirs,
+            board::gh_status,
+            board::board_fetch,
+            board::board_cached,
+            board::board_set_field,
+            board::board_create_task,
+            board::board_create_epic,
+            board::schedule_read,
+            board::schedule_write,
+            board::schedule_render,
+            board::activity_days,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

@@ -72,6 +72,49 @@ pub struct WorkspaceNode {
 static WORKSPACE_ROOTS: LazyLock<Mutex<HashSet<PathBuf>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
+/// Projects and subprojects of the last scan as `(path as scanned, canonical
+/// path)`, for `board::activity_days` (which groups prompts by project).
+static LAST_PROJECTS: Mutex<Vec<ProjectPath>> = Mutex::new(Vec::new());
+
+/// A project path as scanned, with its canonical spelling when it resolves.
+pub type ProjectPath = (PathBuf, Option<PathBuf>);
+
+/// Every project and subproject in the trees (roots and groups left out).
+pub fn project_paths(nodes: &[WorkspaceNode]) -> Vec<PathBuf> {
+    fn walk(n: &WorkspaceNode, out: &mut Vec<PathBuf>) {
+        if matches!(n.kind, Kind::Project | Kind::Subproject) {
+            out.push(PathBuf::from(&n.path));
+        }
+        for c in &n.children {
+            walk(c, out);
+        }
+    }
+    let mut out = Vec::new();
+    for n in nodes {
+        walk(n, &mut out);
+    }
+    out
+}
+
+/// The projects of the last `workspace_scan`, each with its canonical path.
+pub fn last_projects() -> Vec<ProjectPath> {
+    LAST_PROJECTS
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+}
+
+/// `paths` with their canonical spellings.
+pub fn with_canonical(paths: Vec<PathBuf>) -> Vec<ProjectPath> {
+    paths
+        .into_iter()
+        .map(|p| {
+            let c = p.canonicalize().ok();
+            (p, c)
+        })
+        .collect()
+}
+
 fn s(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
@@ -288,6 +331,8 @@ fn register(nodes: &[WorkspaceNode]) {
         }
         roots.insert(p);
     }
+    drop(roots);
+    *LAST_PROJECTS.lock().unwrap_or_else(|p| p.into_inner()) = with_canonical(project_paths(nodes));
 }
 
 fn is_workspace_root(p: &Path) -> bool {

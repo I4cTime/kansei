@@ -44,13 +44,28 @@ pub struct Session {
     live: Option<LiveInfo>,
 }
 
+/// One line of `~/.claude/history.jsonl`.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct HistoryLine {
-    display: Option<String>,
-    timestamp: Option<i64>,
-    project: Option<String>,
-    session_id: Option<String>,
+pub struct HistoryLine {
+    pub display: Option<String>,
+    /// Epoch milliseconds.
+    pub timestamp: Option<i64>,
+    /// The real path of the session's cwd.
+    pub project: Option<String>,
+    pub session_id: Option<String>,
+}
+
+/// Every parseable line of a history.jsonl file (blank and malformed lines
+/// skipped; a missing file yields nothing). Shared with `board::activity_days`.
+pub fn history_lines(path: &Path) -> impl Iterator<Item = HistoryLine> {
+    let reader = fs::File::open(path).ok().map(BufReader::new);
+    reader
+        .into_iter()
+        .flat_map(|r| r.lines())
+        .filter_map(Result::ok)
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| serde_json::from_str::<HistoryLine>(&line).ok())
 }
 
 #[derive(Deserialize)]
@@ -107,17 +122,7 @@ fn make_title(display: &str) -> Option<String> {
 
 fn read_history(path: &Path) -> HashMap<String, HistoryAgg> {
     let mut out: HashMap<String, HistoryAgg> = HashMap::new();
-    let Ok(file) = fs::File::open(path) else {
-        return out;
-    };
-    for line in BufReader::new(file).lines() {
-        let Ok(line) = line else { continue };
-        if line.trim().is_empty() {
-            continue;
-        }
-        let Ok(h) = serde_json::from_str::<HistoryLine>(&line) else {
-            continue;
-        };
+    for h in history_lines(path) {
         let Some(id) = h.session_id.filter(|s| !s.is_empty()) else {
             continue;
         };
