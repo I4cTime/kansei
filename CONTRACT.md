@@ -10,10 +10,13 @@ Tauri 2 + React 19 + Tailwind v4 + xterm.js. Working name, may change.
 | SIDEBAR     | [ q-ring ] [ aibou ] [ niwa ] [+]        <- tab rail|
 | (Claude     |----------------------------------------------------|
 |  items)     |                                                    |
-|  Projects   |                xterm terminal                      |
+|  Today strip|                xterm terminal                      |
+|  Projects   |                                                    |
+|  Board      |                (one per tab, pty runs `claude`     |
+|  Calendar   |                 in the tab's folder)               |
 |  Sessions   |                                                    |
-|  Memory     |                (one per tab, pty runs `claude`     |
-|  Rules      |                 in the tab's folder)               |
+|  Memory     |                                                    |
+|  Rules      |                                                    |
 |  MCPs       |                                                    |
 |  Agents     |                                                    |
 |  Skills     |                                                    |
@@ -40,7 +43,8 @@ Tauri 2 + React 19 + Tailwind v4 + xterm.js. Working name, may change.
 - Ctrl+Shift+T new tab, Ctrl+Shift+W close tab
 - Ctrl+PageUp / Ctrl+PageDown previous / next tab
 - Ctrl+Shift+B toggle sidebar collapse
-- Ctrl+Shift+1..9 and 0 jump to sidebar section 1..10 (Projects, Sessions, Memory, Rules, MCPs, Agents, Skills, Workflows, Hooks, Settings; 0 is Settings)
+- Ctrl+Shift+1..9 and 0 jump to the first ten sidebar sections in nav order (Projects, Board, Calendar, Sessions, Memory, Rules, MCPs, Agents, Skills, Workflows; 0 is Workflows)
+- Ctrl+Shift+H opens Hooks, Ctrl+Shift+, (comma) opens Settings (`PANEL_KEYS` in `src/app/shortcuts.ts`; the nav tooltips come from `panelShortcut`)
 - Esc closes the editor sheet, Ctrl+S saves inside it
 
 ## Rust commands (all `#[tauri::command]`, args are camelCase JSON objects)
@@ -573,3 +577,206 @@ so an editor with unsaved changes is never replaced.
 Dev driver: `t.workspaces` (`treeAtom`, `registryAtom`, `scanWorkspaces`,
 `saveEntry`, `saveRelated`, `workspacePaths`), `t.workspaceModel` (pure helpers),
 `t.ipc.workspace`, and `t.projects.{addWorkspaceRoot, removeWorkspaceRoot}`.
+
+## Board and Calendar (added 2026-11-01)
+
+The focus system moved from Now/Next/Later to project / epic / task. The source
+of truth is the GitHub Project **"I4C"** (user `I4cTime`, number 3, node id
+`PVT_kwHOAW7RTs4BfzfL`, https://github.com/users/I4cTime/projects/3). Tsukue
+is a view and a light editor of that board plus the owner of the calendar
+layer (`SCHEDULE.md`). Nothing about the board is stored in Tsukue except a
+cache.
+
+Model:
+- **Epic** = a goal. An issue in the private hub repo `I4cTime/focus`
+  (`Kind: Epic`); `Area` names the project it belongs to.
+- **Task** = a unit of work. An issue in the repo where the code lives, a
+  sub-issue of its epic (`Kind: Task`). The board's sub-issue workflow adds it.
+- **Lanes** (`Status`): `Backlog`, `Ready`, `In progress`, `In review`, `Done`.
+  Built-in workflows: item added -> Backlog; PR linked to an issue -> In
+  progress; PR merged / item closed -> Done; Status Done -> issue closed.
+- **Scheduled** (date) is the calendar: the day a task is meant to happen.
+
+Field ids (resolve fresh with `gh project field-list 3 --owner @me --format json`
+when a write fails; these are the values on 2026-11-01):
+
+| field | id | options |
+|---|---|---|
+| Status | `PVTSSF_lAHOAW7RTs4BfzfLzhaDvNA` | Backlog `f75ad846`, Ready `7b601cd6`, In progress `47fc9ee4`, In review `46f9a2af`, Done `98236657` |
+| Kind | `PVTSSF_lAHOAW7RTs4BfzfLzhoIXaw` | Epic `b600f446`, Task `2292daba` |
+| Area | `PVTSSF_lAHOAW7RTs4BfzfLzhhPn2s` | one option per project (q-ring, tanko, groundrules, lookout, cryo, mineui, protonshift, sites, atelier, deathbell, desktop, infra, marketing, aibou, niwa, shiori, tsukue, synthesist, blazedtravel, job-hunt) |
+| Scheduled | `PVTF_lAHOAW7RTs4BfzfLzhoIXaI` | date |
+| Order | `PVTF_lAHOAW7RTs4BfzfLzhhPn3o` | number (rank inside Ready) |
+| Started / Target | `PVTF_lAHOAW7RTs4BfzfLzhhPn3s` / `...zhhPn3w` | date |
+| Done when / Outcome | `PVTF_lAHOAW7RTs4BfzfLzhhPn30` / `...zhhPn34` | text |
+
+### Access
+
+All GitHub traffic goes through the `gh` CLI (keyring auth carries the
+`project` scope). Every `gh` child is spawned with `GITHUB_TOKEN` **removed
+from its environment**: the token a Claude session exports is read-only and
+would make writes fail. `gh_status` -> `{ available, login, scopes, error }`
+from `gh auth status` (parse the text; `available` is false when `gh` is
+missing or not logged in). Panels render the cached board with an "as of"
+stamp and a notice when `gh` is unavailable.
+
+### Rust (`src-tauri/src/board.rs`)
+
+| command | args | returns |
+|---|---|---|
+| `gh_status` | | see above |
+| `board_fetch` | `{ force?: bool }` | `BoardSnapshot` (one GraphQL query through `gh api graphql`, paginated at 100, mapped and written to `<appData>/board.json`; without `force` a snapshot younger than 60 s is returned as is) |
+| `board_cached` | | the last `BoardSnapshot` from disk or `null` |
+| `board_set_field` | `{ itemId, field, value }` | updated `BoardItem`; `field` one of `status kind area scheduled order started target doneWhen outcome`; single-select values are option **names** resolved to ids (field list cached per run, refetched on a miss); `value: null` clears |
+| `board_create_task` | `{ repo, title, body, epic: { repo, number } \| null, scheduled: string \| null }` | the new `BoardItem`: `gh issue create`, then `addSubIssue` (GraphQL, node ids looked up) when `epic` is given, `gh project item-add` (idempotent), Kind = Task, Scheduled when given |
+| `board_create_epic` | `{ title, body, area: string \| null, doneWhen: string \| null }` | the new `BoardItem` in `I4cTime/focus` with Kind = Epic |
+| `schedule_read` | | `Schedule` (`<appData>/schedule.json`, defaults when missing) |
+| `schedule_write` | `{ schedule }` | writes atomically, then renders `SCHEDULE.md` |
+| `schedule_render` | | renders `SCHEDULE.md` from the cached board + schedule; returns the path |
+| `activity_days` | `{ from, to }` (`YYYY-MM-DD`, inclusive, local time) | `ActivityDay[]`: per day the prompt count per project path from `~/.claude/history.jsonl` (the `project` field is the cwd; group by the workspace project that contains it when one does, else the cwd itself) |
+
+```ts
+type BoardItem = {
+  itemId: string; number: number; repo: string;        // "I4cTime/aibou"
+  title: string; url: string; state: "open" | "closed"; closedAt: string | null;
+  isPr: boolean;
+  status: "Backlog" | "Ready" | "In progress" | "In review" | "Done" | null;
+  kind: "Epic" | "Task" | null; area: string | null;
+  scheduled: string | null; started: string | null; target: string | null;
+  order: number | null; doneWhen: string | null; outcome: string | null;
+  parent: { repo: string; number: number } | null;     // the epic, for tasks
+  subIssues: { total: number; completed: number };
+};
+type BoardSnapshot = { fetchedAt: string; items: BoardItem[]; error: string | null };
+type DayPlan = { area: string | null; note: string };
+type Schedule = {
+  rhythm: Record<"mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun", DayPlan>;
+  overrides: Record<string, DayPlan>;                   // "YYYY-MM-DD"
+};
+type ActivityDay = { date: string; projects: Record<string, number> };
+```
+
+Epics are matched to tasks by `parent`; a task whose epic is not on the board
+still lists under "No epic".
+
+### SCHEDULE.md (calendar layer, owned by Tsukue)
+
+Written to the first workspace root (`~/Develop/SCHEDULE.md`) after every
+schedule write, every successful board fetch and at startup. The root
+`CLAUDE.md` gets a `Schedule: @SCHEDULE.md` paragraph appended the same way
+`PROJECTS.md` is imported (only when it does not already mention
+`@SCHEDULE.md`). Content, in this order:
+
+1. Title and a one-line note that the file is generated (Tsukue, Calendar panel), with the board URL.
+2. **Today**: date, the day's area (override wins over rhythm), the override
+   note when there is one, then the tasks scheduled today as
+   `- <repo>#<n> <title> (<status>; epic <hub>#<n> <title>)`.
+3. **This week** (Monday to Sunday): one subsection per day in the same shape,
+   days without anything get a single `nothing scheduled` line.
+4. **Coming up**: dated tasks after this week, next 30 days, grouped by date.
+5. **Weekly rhythm**: a table weekday / area / note.
+6. **Unscheduled**: open tasks in Ready or In progress without a date (so a
+   session can propose one).
+
+No em dashes anywhere in the file. Dates are `YYYY-MM-DD` plus the weekday name.
+
+### Front end
+
+- Two new panels in `src/panels/index.ts`: `board` ("Board", icon
+  `KanbanSquare`) second and `calendar` ("Calendar", icon `CalendarDays`) third,
+  so the nav is Projects, Board, Calendar, Sessions, Memory, Rules, MCPs,
+  Agents, Skills, Workflows, Hooks, Settings. `Ctrl+Shift+1..9,0` cover the
+  first ten in nav order; Hooks and Settings get `Ctrl+Shift+H` and
+  `Ctrl+Shift+,` (update the Keyboard section and README).
+- `src/panels/board/`: `model.ts` (snapshot atom, lanes, epic grouping,
+  `areaProject(area)` = the workspace project whose basename equals the area
+  name case-insensitively, else a registry entry with that name, else null),
+  `BoardPanel.tsx`, `sheets.tsx` (New task, New epic, Move/Schedule).
+  Layout is vertical (the sidebar is narrow): one collapsible section per lane
+  in order, Done collapsed by default and limited to the last 10 by `closedAt`.
+  Filter chips `Tasks | Epics | All` (default Tasks) and a search box (title,
+  repo, area, number). Inside a lane, tasks group under their epic's title.
+  Row: title; chips `<repo short name>` or area, `#n`, the scheduled date (red
+  when past and not Done), epic progress `3/7` for epics. Row actions: move to
+  lane (menu of the four other lanes), schedule (date input, clear), open on
+  GitHub (`shell.open`), open project (when `areaProject` or the repo maps to
+  a workspace project: open a tab there). Header: refresh (force), as-of
+  stamp, New task, New epic. Writes are optimistic and roll back with a toast
+  on failure.
+- `src/panels/calendar/`: `model.ts` (week/month grids, today's plan,
+  `dayTasks(date)`, activity merge), `CalendarPanel.tsx`, `sheets.tsx` (Day,
+  Rhythm). Week view default, Month view toggle; prev / Today / next. A day
+  cell shows: weekday + date, the area (override wins, muted when from the
+  rhythm), the override note (one line), scheduled tasks (status dot + title,
+  max 4 then "+N"), and an activity strip: one dot per project with prompts
+  that day, tooltip with counts. Clicking a day opens the Day sheet: area
+  picker (the Area options, plus "none"), note, the day's tasks with
+  unschedule, and "Schedule a task" (picker over open tasks not Done, sorted
+  by lane then title). A task row can also be dragged onto a day cell to set
+  its date (pointer events, same as the sidebar resize handle). Rhythm sheet:
+  seven rows of area + note. Every change goes through `schedule_write`.
+- Sidebar: a one-line **Today** strip above the nav (hidden when the sidebar is
+  collapsed): `Today · <area or "no plan"> · <n> task(s)`; click opens Calendar.
+  Projects panel: the project that matches today's area gets a `today` chip
+  and sorts first inside its group.
+- Prefs: none new. State lives in `<appData>/board.json` and
+  `<appData>/schedule.json`.
+
+### Tests
+
+- Rust: GraphQL response -> `BoardItem` mapping on a fixture; option-name
+  resolution; `SCHEDULE.md` rendering on a fixed date; `activity_days`
+  bucketing in local time; the `gh` runner is a function the tests replace, so
+  no test calls GitHub.
+- Front end: week/month grid maths across month and year boundaries; today's
+  plan precedence (override > rhythm); `areaProject` matching.
+- Driver: open Board and Calendar with the cached snapshot in a scratch
+  `TSUKUE_DATA_DIR`, screenshot both.
+
+### As implemented (2026-11-01)
+
+- `BoardSnapshot` also carries `areas: string[]`, the Area field's options in
+  board order, read in the same GraphQL query as the items (the first page
+  also fills the per-run field cache). The Day, Rhythm and New epic sheets
+  offer them (a fixed copy of the 2026-11-01 list until the first fetch).
+- Draft issues and items whose content is not visible are skipped (a
+  `BoardItem` needs a repo and a number). A merged PR is `state: "closed"`.
+  An item without a Status shows in Backlog when open and Done when closed.
+- `board_fetch` failures do not throw: the result is the cached snapshot (or
+  an empty one with `fetchedAt: ""`) with `error` set, and board.json is kept.
+  Concurrent fetches are serialised, so a second caller finds the fresh cache.
+- `board_set_field` takes `value: string | number | null`; an empty string
+  clears too. Field and option names match case-insensitively. When a write
+  with cached ids fails, the field list is fetched again and the write retried
+  once if the ids moved. Issue creation passes values as `--title=<t>` so a
+  title starting with `-` is not read as a flag. A failure after the issue
+  exists says `created <url>, but <step> failed: ...`.
+- gh is looked up on PATH, then `~/.local/bin/gh`, mise shims, /usr/local/bin,
+  /usr/bin; children also get `GH_PROMPT_DISABLED=1` and are killed after 60 s.
+- `schedule_write` returns the schedule as saved (areas trimmed, notes on one
+  line, non-date override keys dropped). An override with `area: null` is a
+  deliberate "no area" day; the Day sheet removes an override that repeats the
+  rhythm (same area, no note) instead of saving it.
+- SCHEDULE.md is also rendered after `board_set_field` and the create commands,
+  and the front end asks for a render when the local date changes. The first
+  workspace root is read from `<appData>/prefs.json` (`workspaceRoots`, same
+  default as the front end: `~/Develop` when the key is missing); the file is
+  only written when its text changes. The `Schedule: @SCHEDULE.md` paragraph
+  is appended once per root, remembered in `<appData>/schedule-imports.json`
+  (a removed line stays removed); a root without CLAUDE.md is skipped and
+  retried later. Titles and notes have em and en dashes replaced by `-`.
+- `activity_days` returns every day of the range (`projects: {}` when none),
+  at most 400 days. Projects come from the last `workspace_scan` (a fresh scan
+  of the prefs roots when there was none); the deepest project containing the
+  cwd wins, matching either its scanned or its canonical path.
+- Calendar extras: an "Unscheduled" list under the grid (Ready and In
+  progress tasks without a date) whose rows drag onto days, a "Use weekly
+  rhythm" button in the Day sheet, and the Board's "as of" stamp and gh notice.
+  Month cells show tasks as lane-coloured dots (title in the tooltip).
+- Dev driver: `t.board` (model atoms and helpers plus `refreshBoard`,
+  `setItemField`, `createTask`, `createEpic`; these write to GitHub),
+  `t.calendar` (model plus `loadSchedule`, `saveSchedule`), `t.ipc.board`,
+  `t.ipc.schedule`. Replacing `t.ipc.board.setField` stubs board writes for UI
+  checks.
+- Front-end tests run with vitest (`pnpm test`): `src/panels/calendar/model.test.ts`,
+  `src/panels/board/model.test.ts`, `src/app/shortcuts.test.ts`.
