@@ -119,7 +119,9 @@ a run copy the file to `~/.claude.json.tsukue-bak`.
 blocks, the way its own `/mcp` screen does. It never writes.
 - `plugins`: `~/.claude/plugins/installed_plugins.json`
   (`{ version, plugins: { "<name>@<marketplace>": [ { scope, installPath, version, projectPath?, ... } ] } }`),
-  then `<installPath>/.mcp.json` (`{ mcpServers: { name: config } }`) per install,
+  then per install the first of `<installPath>/.mcp.json`,
+  `<installPath>/.claude-plugin/plugin.json` or `<installPath>/mcp.json`
+  (`{ mcpServers: { name: config } }`),
   in file order (`preserve_order`). `PluginServer { plugin, marketplace, version,
   scope, projectPath, enabled, name, config, file, needsAuth }`: `enabled` is
   `enabledPlugins["<name>@<marketplace>"]` in `~/.claude/settings.json` (null

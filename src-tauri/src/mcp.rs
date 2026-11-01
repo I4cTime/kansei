@@ -436,9 +436,13 @@ fn read_object(path: &Path) -> Option<Map<String, Value>> {
     }
 }
 
-/// `<install_path>/.mcp.json` when `install_path` is absolute, has no `..` and
-/// the file stays inside `plugins` both as written and with symlinks resolved.
-/// Returns the path as written (the front end opens it read-only).
+/// The file that declares an installed plugin's MCP servers: `.mcp.json`,
+/// else `.claude-plugin/plugin.json` (its top-level `mcpServers`, used by
+/// chrome-devtools-mcp among others), else `mcp.json`. Only when `install_path`
+/// is absolute, has no `..` and the file stays inside `plugins` both as written
+/// and with symlinks resolved. Returns the path as written (opened read-only).
+const PLUGIN_MCP_FILES: [&str; 3] = [".mcp.json", ".claude-plugin/plugin.json", "mcp.json"];
+
 fn plugin_mcp_json(plugins: &Path, c_plugins: &Path, install_path: &str) -> Option<PathBuf> {
     let p = Path::new(install_path);
     if !p.is_absolute()
@@ -447,12 +451,14 @@ fn plugin_mcp_json(plugins: &Path, c_plugins: &Path, install_path: &str) -> Opti
     {
         return None;
     }
-    let file = p.join(".mcp.json");
-    if !file.starts_with(plugins) {
-        return None;
-    }
-    let canonical = file.canonicalize().ok()?;
-    (canonical.starts_with(c_plugins) && canonical.is_file()).then_some(file)
+    PLUGIN_MCP_FILES.iter().find_map(|rel| {
+        let file = p.join(rel);
+        if !file.starts_with(plugins) {
+            return None;
+        }
+        let canonical = file.canonicalize().ok()?;
+        (canonical.starts_with(c_plugins) && canonical.is_file()).then_some(file)
+    })
 }
 
 /// Strings of a JSON array; objects contribute their `name` (or `id`) field.
@@ -902,6 +908,11 @@ mod tests {
             &cache.join("context7/abc/.mcp.json"),
             r#"{ "mcpServers": { "zeta": { "command": "z" }, "context7": { "type": "http", "url": "https://mcp.context7.com/mcp" } } }"#,
         );
+        // Declared in .claude-plugin/plugin.json instead of .mcp.json (chrome-devtools-mcp style).
+        write(
+            &cache.join("devtools/1.11.0/.claude-plugin/plugin.json"),
+            r#"{ "name": "devtools", "mcpServers": { "chrome-devtools": { "command": "npx", "args": ["chrome-devtools-mcp@1.11.0"] } } }"#,
+        );
         fs::create_dir_all(cache.join("lsp/1.0.0")).unwrap();
         // Outside the plugins dir: must never be read.
         write(
@@ -916,6 +927,7 @@ mod tests {
     "context7@official": [ {{ "scope": "user", "installPath": "{c}/context7/abc", "version": "abc" }},
                            {{ "scope": "project", "installPath": "{c}/context7/abc", "version": "abc" }} ],
     "lsp@official": [ {{ "scope": "user", "installPath": "{c}/lsp/1.0.0", "version": "1.0.0" }} ],
+    "devtools@official": [ {{ "scope": "user", "installPath": "{c}/devtools/1.11.0", "version": "1.11.0" }} ],
     "evil@official": [ {{ "scope": "user", "installPath": "{h}/elsewhere" }},
                        {{ "scope": "user", "installPath": "{c}/../../../elsewhere" }} ]
   }}
@@ -951,8 +963,10 @@ mod tests {
                 ("vercel", "vercel", Some(true), false),
                 ("context7", "zeta", Some(false), false),
                 ("context7", "context7", Some(false), true),
+                ("devtools", "chrome-devtools", None, false),
             ]
         );
+        assert!(x.plugins[3].file.ends_with("devtools/1.11.0/.claude-plugin/plugin.json"));
         let v = &x.plugins[0];
         assert_eq!(v.marketplace.as_deref(), Some("official"));
         assert_eq!(v.version.as_deref(), Some("0.50.0"));
@@ -992,7 +1006,7 @@ mod tests {
         .unwrap();
         let x = extras_at(&home);
         assert!(!x.plugins.iter().any(|p| p.name == "evil"));
-        assert_eq!(x.plugins.len(), 3);
+        assert_eq!(x.plugins.len(), 4);
     }
 
     #[test]
