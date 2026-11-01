@@ -250,7 +250,7 @@ for the terminal (Omarchy ships it).
 
 ## Sessions (added 2026-10-31)
 
-Sidebar section "Sessions", second in the nav after Projects (Ctrl+Shift+2; it was first until Projects arrived).
+Sidebar section "Sessions", fourth in the nav since Board and Calendar arrived (Ctrl+Shift+4; it was first until Projects arrived).
 
 Sources, all read-only:
 - `~/.claude/history.jsonl`: one JSON line per prompt `{ display, timestamp (ms), project (real path), sessionId }`.
@@ -321,7 +321,7 @@ Front end:
 
 ## Rules (added 2026-10-31)
 
-Sidebar section "Rules", fourth in the nav (Ctrl+Shift+4). Claude Code rules are
+Sidebar section "Rules", sixth in the nav (Ctrl+Shift+6). Claude Code rules are
 Markdown files under `~/.claude/rules/` (User scope) and `<root>/.claude/rules/`
 (Project scope), subfolders and symlinked files allowed. Optional frontmatter
 `paths:` (a YAML list of globs, or one string, split on commas outside braces)
@@ -341,8 +341,8 @@ slugified per segment, a slash makes a subfolder) writes a template with a
 
 ## Projects (added 2026-10-31)
 
-Sidebar section "Projects", first in the nav (Ctrl+Shift+1; Sessions is now 2,
-the rest follow up to Settings, the tenth, on Ctrl+Shift+0). A project is a folder a Claude Code
+Sidebar section "Projects", first in the nav (Ctrl+Shift+1; Board and Calendar
+follow, then Sessions on 4; see the Keyboard section for the full map). A project is a folder a Claude Code
 session ran in, plus folders the user adds.
 
 Sources, unioned by canonical folder (symlinked spellings of one folder merge

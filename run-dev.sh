@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start Tsukue in dev mode detached, log to /tmp/tsukue-dev.log.
+# Start Tsukue in dev mode detached, log to /tmp/tsukue-dev.log. `run-dev.sh stop` only stops it.
 # Stops only the dev instance this script started before (its process group,
 # recorded in a pidfile) plus whatever holds the Vite port. Never kills by name:
 # the packaged Tsukue binary is also called `tsukue`.
@@ -16,6 +16,11 @@ if [ -f "$PIDFILE" ]; then
     kill -KILL -- "-$pgid" 2>/dev/null
   fi
   rm -f "$PIDFILE"
+fi
+if [ "${1:-}" = "stop" ]; then
+  fuser -k 1420/tcp >/dev/null 2>&1
+  echo "stopped"
+  exit 0
 fi
 fuser -k 1420/tcp >/dev/null 2>&1
 sleep 1
