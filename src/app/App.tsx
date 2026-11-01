@@ -13,6 +13,8 @@ import { restoreTabs } from "./tabs";
 import { startPtyRouting } from "./terminals";
 import { themeTickAtom } from "./terminalTheme";
 import { startWorkspaces } from "../panels/projects/workspaceStore";
+import { startBoard } from "../panels/board/actions";
+import { startCalendar } from "../panels/calendar/actions";
 
 let booted = false;
 async function boot() {
@@ -25,6 +27,8 @@ async function boot() {
   }
   await loadPrefs();
   startWorkspaces();
+  startBoard();
+  startCalendar();
   await restoreTabs();
 }
 

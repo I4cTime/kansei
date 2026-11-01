@@ -4,7 +4,7 @@
 // helpers below and the JSON result is handed back through driver_result.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { pty, files, memory, mcp, projects as projectsIpc, sessions as sessionsIpc, project as projectIpc, workspace as workspaceIpc } from "../lib/ipc";
+import { pty, files, memory, mcp, projects as projectsIpc, sessions as sessionsIpc, project as projectIpc, workspace as workspaceIpc, board as boardIpc, schedule as scheduleIpc } from "../lib/ipc";
 import { projectAtom, refreshProject } from "./project";
 import * as terminals from "./terminals";
 import * as tabs from "./tabs";
@@ -16,6 +16,10 @@ import * as projectActions from "../panels/projects/actions";
 import { sessionsProjectFilterAtom } from "../panels/sessions/model";
 import * as workspaces from "../panels/projects/workspaceStore";
 import * as workspaceModel from "../panels/projects/workspace";
+import * as boardModel from "../panels/board/model";
+import * as boardActions from "../panels/board/actions";
+import * as calendarModel from "../panels/calendar/model";
+import * as calendarActions from "../panels/calendar/actions";
 
 declare global {
   interface Window {
@@ -39,7 +43,11 @@ export function installDriver() {
     dismissOverlay,
     invoke,
     listen,
-    ipc: { pty, files, memory, mcp, projects: projectsIpc, sessions: sessionsIpc, project: projectIpc, workspace: workspaceIpc },
+    ipc: { pty, files, memory, mcp, projects: projectsIpc, sessions: sessionsIpc, project: projectIpc, workspace: workspaceIpc, board: boardIpc, schedule: scheduleIpc },
+    /** Board atoms and pure helpers (snapshotAtom, ghStatusAtom, laneGroups, areaProject...) and its actions (refreshBoard, setItemField: writes to GitHub). */
+    board: { ...boardModel, ...boardActions },
+    /** Calendar atoms and helpers (scheduleAtom, todayAtom, weekGrid, monthGrid, dayPlan...) and loadSchedule / saveSchedule. */
+    calendar: { ...calendarModel, ...calendarActions },
     project: { projectAtom, refreshProject },
     /** Projects panel pin / hide helpers (addProjectWithPicker opens a native dialog). */
     projects: projectActions,

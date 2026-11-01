@@ -113,6 +113,47 @@ export type WorkspaceNode = {
   children: WorkspaceNode[];
 };
 
+/** Board lanes (the Status field), in order. */
+export type BoardStatus = "Backlog" | "Ready" | "In progress" | "In review" | "Done";
+export type BoardKind = "Epic" | "Task";
+/** One item of the I4C GitHub Project (CONTRACT.md "Board and Calendar"). Dates are YYYY-MM-DD. */
+export type BoardItem = {
+  itemId: string;
+  number: number;
+  /** "I4cTime/aibou" */
+  repo: string;
+  title: string;
+  url: string;
+  state: "open" | "closed";
+  closedAt: string | null;
+  isPr: boolean;
+  status: BoardStatus | null;
+  kind: BoardKind | null;
+  area: string | null;
+  scheduled: string | null;
+  started: string | null;
+  target: string | null;
+  order: number | null;
+  doneWhen: string | null;
+  outcome: string | null;
+  /** The epic, for tasks. */
+  parent: { repo: string; number: number } | null;
+  subIssues: { total: number; completed: number };
+};
+/** fetchedAt is ISO UTC ("" when never fetched); areas are the Area field's options in board order. */
+export type BoardSnapshot = { fetchedAt: string; items: BoardItem[]; error: string | null; areas: string[] };
+export type BoardField = "status" | "kind" | "area" | "scheduled" | "order" | "started" | "target" | "doneWhen" | "outcome";
+export type GhStatus = { available: boolean; login: string | null; scopes: string[]; error: string | null };
+export type WeekdayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+export type DayPlan = { area: string | null; note: string };
+export type Schedule = {
+  rhythm: Record<WeekdayKey, DayPlan>;
+  /** "YYYY-MM-DD" -> plan; an override wins over the rhythm. */
+  overrides: Record<string, DayPlan>;
+};
+/** Prompt counts per project path for one local day. */
+export type ActivityDay = { date: string; projects: Record<string, number> };
+
 export const pty = {
   spawn: (a: { cwd: string; command: string; args: string[]; cols: number; rows: number }) =>
     invoke<{ id: string; pid?: number | null }>("pty_spawn", a),
@@ -176,6 +217,31 @@ export const mcp = {
   remove: (s: { scope: McpScope; project?: string; name: string }) => invoke<null>("mcp_remove", s),
   /** Plugin servers, claude.ai connectors and built-ins. Read only. */
   extras: () => invoke<McpExtras>("mcp_extras"),
+};
+
+export const board = {
+  /** `gh auth status` (gh runs without GITHUB_TOKEN). */
+  ghStatus: () => invoke<GhStatus>("gh_status"),
+  /** Fetch and cache the board; without force a snapshot younger than 60 s comes back as is. Errors are in `error`. */
+  fetch: (force = false) => invoke<BoardSnapshot>("board_fetch", { force }),
+  cached: () => invoke<BoardSnapshot | null>("board_cached"),
+  /** Single-select values are option names; null clears. Writes to GitHub. */
+  setField: (itemId: string, field: BoardField, value: string | number | null) => invoke<BoardItem>("board_set_field", { itemId, field, value }),
+  /** gh issue create, sub-issue of `epic`, added to the board as a Task. Writes to GitHub. */
+  createTask: (a: { repo: string; title: string; body: string; epic: { repo: string; number: number } | null; scheduled: string | null }) =>
+    invoke<BoardItem>("board_create_task", a),
+  /** An epic in I4cTime/focus. Writes to GitHub. */
+  createEpic: (a: { title: string; body: string; area: string | null; doneWhen: string | null }) => invoke<BoardItem>("board_create_epic", a),
+};
+
+export const schedule = {
+  read: () => invoke<Schedule>("schedule_read"),
+  /** Writes schedule.json, then SCHEDULE.md; returns the schedule as saved. */
+  write: (s: Schedule) => invoke<Schedule>("schedule_write", { schedule: s }),
+  /** Renders SCHEDULE.md into the first workspace root; returns its path. */
+  render: () => invoke<string>("schedule_render"),
+  /** Inclusive local-date range, at most 400 days. */
+  activity: (from: string, to: string) => invoke<ActivityDay[]>("activity_days", { from, to }),
 };
 
 /** Decode a base64 pty chunk to bytes for term.write(). */
