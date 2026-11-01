@@ -46,6 +46,7 @@ export type ProjectInfo = {
   exists: {
     agents: boolean;
     skills: boolean;
+    rules: boolean;
     settings: boolean;
     settingsLocal: boolean;
     mcpJson: boolean;

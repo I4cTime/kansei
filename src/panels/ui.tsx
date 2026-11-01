@@ -122,7 +122,7 @@ export function Toggle({ checked, onChange, disabled, label }: { checked: boolea
   );
 }
 
-export function Badge({ children, tone = "muted", title }: { children: ReactNode; tone?: "muted" | "accent" | "ok" | "warn" | "danger"; title?: string }) {
+export function Badge({ children, tone = "muted", title, className }: { children: ReactNode; tone?: "muted" | "accent" | "ok" | "warn" | "danger"; title?: string; className?: string }) {
   const tones = {
     muted: "border-border text-fg-muted",
     accent: "border-accent text-accent",
@@ -131,7 +131,7 @@ export function Badge({ children, tone = "muted", title }: { children: ReactNode
     danger: "border-danger text-danger",
   } as const;
   return (
-    <span title={title} className={cx("inline-flex shrink-0 items-center rounded border px-1 text-[10px] leading-4 font-medium", tones[tone])}>
+    <span title={title} className={cx("inline-flex shrink-0 items-center rounded border px-1 text-[10px] leading-4 font-medium", tones[tone], className)}>
       {children}
     </span>
   );

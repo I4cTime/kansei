@@ -13,7 +13,8 @@ Tauri 2 + React 19 + Tailwind v4 + xterm.js. Working name, may change.
 |  Projects   |                xterm terminal                      |
 |  Sessions   |                                                    |
 |  Memory     |                (one per tab, pty runs `claude`     |
-|  MCPs       |                 in the tab's folder)               |
+|  Rules      |                 in the tab's folder)               |
+|  MCPs       |                                                    |
 |  Agents     |                                                    |
 |  Skills     |                                                    |
 |  Workflows  |                                                    |
@@ -39,7 +40,7 @@ Tauri 2 + React 19 + Tailwind v4 + xterm.js. Working name, may change.
 - Ctrl+Shift+T new tab, Ctrl+Shift+W close tab
 - Ctrl+PageUp / Ctrl+PageDown previous / next tab
 - Ctrl+Shift+B toggle sidebar collapse
-- Ctrl+Shift+1..9 jump to sidebar section (Projects, Sessions, Memory, MCPs, Agents, Skills, Workflows, Hooks, Settings)
+- Ctrl+Shift+1..9 and 0 jump to sidebar section 1..10 (Projects, Sessions, Memory, Rules, MCPs, Agents, Skills, Workflows, Hooks, Settings; 0 is Settings)
 - Esc closes the editor sheet, Ctrl+S saves inside it
 
 ## Rust commands (all `#[tauri::command]`, args are camelCase JSON objects)
@@ -231,7 +232,7 @@ Claude Code also reads per-project files. Tsukue surfaces them for the **active
 tab's cwd** ("the project"), walking up from cwd to the nearest ancestor that
 contains `.claude/`, `.mcp.json`, `CLAUDE.md` or `.git` (fall back to cwd).
 
-Project files: `<p>/.claude/agents/*.md`, `<p>/.claude/skills/*/SKILL.md`,
+Project files: `<p>/.claude/agents/*.md`, `<p>/.claude/skills/*/SKILL.md`, `<p>/.claude/rules/**/*.md`,
 `<p>/.claude/settings.json`, `<p>/.claude/settings.local.json`, `<p>/.mcp.json`
 (`{ "mcpServers": { name: config } }`), `<p>/CLAUDE.md`, `<p>/CLAUDE.local.md`.
 
@@ -241,7 +242,7 @@ Rust:
   `.mcp.json`, `CLAUDE.md` or `CLAUDE.local.md`. Same symlink/`..` rules as
   `~/.claude`. Walk-up roots count as well: `project_root { cwd }` returns the
   resolved root and the allowlist accepts that root for the same relative set.
-- `project_root` `{ cwd }` -> `{ root: string, exists: { agents, skills, settings, settingsLocal, mcpJson, claudeMd, claudeLocalMd }: boolean map }`.
+- `project_root` `{ cwd }` -> `{ root: string, exists: { agents, skills, rules, settings, settingsLocal, mcpJson, claudeMd, claudeLocalMd }: boolean map }`; `rules` = `<root>/.claude/rules` is a directory.
 - `mcp_*` gain scope `"projectFile"` with `project` = root: reads/writes
   `<root>/.mcp.json` (create with `{ "mcpServers": {} }` when missing, atomic,
   key order preserved). `mcp_list` only includes the projectFile scope when the
@@ -250,7 +251,7 @@ Rust:
 Front end:
 - A `projectAtom` derived from the active tab (`activeTabAtom`): `{ root, exists }`
   refreshed when the active tab changes; null when there is no tab.
-- Agents, Skills, MCPs, Hooks and Settings panels get a scope switch at the top:
+- Rules, Agents, Skills, MCPs, Hooks and Settings panels get a scope switch at the top:
   `User | Project` (Project label = basename of root, disabled with a tooltip
   when no tab). Project scope lists the project files, "New ..." creates under
   `<root>/.claude/...`, Settings-Project shows CLAUDE.md / CLAUDE.local.md /
@@ -260,10 +261,30 @@ Front end:
   equals the active tab's root (falling back to home), and follows tab changes
   until the user picks manually.
 
+## Rules (added 2026-10-31)
+
+Sidebar section "Rules", fourth in the nav (Ctrl+Shift+4). Claude Code rules are
+Markdown files under `~/.claude/rules/` (User scope) and `<root>/.claude/rules/`
+(Project scope), subfolders and symlinked files allowed. Optional frontmatter
+`paths:` (a YAML list of globs, or one string, split on commas outside braces)
+limits a rule to matching files; a rule without `paths` always loads. No new Rust
+command: the panel walks the folder with `fs_list` (dot entries skipped, depth
+limit 8, unlistable subfolders skipped) and reads each `*.md` with `fs_read_text`
+(`src/panels/rules/model.ts`).
+
+Row: name = path relative to the rules dir without `.md` (`frontend/react`),
+summary = first non-empty, non-heading body line (100 chars), chips = one per
+glob (3 shown, then "+N") or "always" when there are none; "no frontmatter"
+(muted) when a leading `---` block never closes (treated as no paths),
+"unreadable" when the read fails. Search matches name, summary and globs.
+Actions: open in the editor sheet, delete (inline confirm), New rule (name is
+slugified per segment, a slash makes a subfolder) writes a template with a
+`paths` example and opens it. Same scope switch as Agents.
+
 ## Projects (added 2026-10-31)
 
 Sidebar section "Projects", first in the nav (Ctrl+Shift+1; Sessions is now 2,
-the rest follow up to Settings on 9). A project is a folder a Claude Code
+the rest follow up to Settings, the tenth, on Ctrl+Shift+0). A project is a folder a Claude Code
 session ran in, plus folders the user adds.
 
 Sources, unioned by canonical folder (symlinked spellings of one folder merge

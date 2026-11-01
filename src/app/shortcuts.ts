@@ -23,7 +23,8 @@ export function matchShortcut(e: KeyboardEvent): ShortcutAction | null {
     case "KeyB":
       return { type: "toggleSidebar" };
   }
-  const m = /^Digit([1-9])$/.exec(e.code);
-  if (m) return { type: "section", index: Number(m[1]) - 1 };
+  // Digit1..9 are sections 1..9, Digit0 is section 10.
+  const m = /^Digit([0-9])$/.exec(e.code);
+  if (m) return { type: "section", index: m[1] === "0" ? 9 : Number(m[1]) - 1 };
   return null;
 }

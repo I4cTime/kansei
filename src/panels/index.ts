@@ -1,8 +1,9 @@
-import { Bot, Brain, FolderKanban, History, Plug, Settings, Sparkles, Webhook, Workflow } from "lucide-react";
+import { Bot, Brain, FolderKanban, History, Plug, ScrollText, Settings, Sparkles, Webhook, Workflow } from "lucide-react";
 import type { PanelDef } from "./types";
 import { ProjectsPanel } from "./projects/ProjectsPanel";
 import { SessionsPanel } from "./sessions/SessionsPanel";
 import { MemoryPanel } from "./memory/MemoryPanel";
+import { RulesPanel } from "./rules/RulesPanel";
 import { McpPanel } from "./mcps/McpPanel";
 import { AgentsPanel } from "./agents/AgentsPanel";
 import { SkillsPanel } from "./skills/SkillsPanel";
@@ -14,6 +15,7 @@ export const PANELS: PanelDef[] = [
   { id: "projects", label: "Projects", icon: FolderKanban, Component: ProjectsPanel },
   { id: "sessions", label: "Sessions", icon: History, Component: SessionsPanel },
   { id: "memory", label: "Memory", icon: Brain, Component: MemoryPanel },
+  { id: "rules", label: "Rules", icon: ScrollText, Component: RulesPanel },
   { id: "mcps", label: "MCPs", icon: Plug, Component: McpPanel },
   { id: "agents", label: "Agents", icon: Bot, Component: AgentsPanel },
   { id: "skills", label: "Skills", icon: Sparkles, Component: SkillsPanel },

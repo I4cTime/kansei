@@ -60,12 +60,13 @@ export function Sidebar() {
           {PANELS.map((p, i) => {
             const isActive = p.id === active?.id;
             const Icon = p.icon;
-            const hint = i < 9 ? ` (Ctrl+Shift+${i + 1})` : "";
+            const digit = i < 9 ? String(i + 1) : i === 9 ? "0" : null;
+            const hint = digit ? ` (Ctrl+Shift+${digit})` : "";
             return (
               <button
                 key={p.id}
                 type="button"
-                title={collapsed ? `${p.label}${hint}` : hint ? `Ctrl+Shift+${i + 1}` : undefined}
+                title={collapsed ? `${p.label}${hint}` : digit ? `Ctrl+Shift+${digit}` : undefined}
                 aria-label={p.label}
                 aria-current={isActive ? "page" : undefined}
                 onClick={() => setPrefs({ sidebarSection: p.id, sidebarCollapsed: false })}

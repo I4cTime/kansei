@@ -1,7 +1,7 @@
 # Tsukue
 
 A personal Claude Code cockpit for Omarchy. One window: a left sidebar that
-edits everything Claude Code reads (memory, MCP servers, agents, skills,
+edits everything Claude Code reads (memory, rules, MCP servers, agents, skills,
 workflows, hooks, settings), a top rail of terminal tabs, and a terminal
 filling the rest, each tab running `claude` in a folder of your choice.
 
@@ -119,7 +119,7 @@ cd src-tauri && cargo build && cargo test && cargo clippy --all-targets
 ## Keyboard
 
 Ctrl+Shift+T new tab, Ctrl+Shift+W close, Ctrl+PageUp/PageDown switch,
-Ctrl+Shift+B toggle sidebar, Ctrl+Shift+1..9 jump to a section, Esc closes
-the editor sheet and the Projects sheets (Edit, Related, Open with), Ctrl+S
-saves in the editor, Ctrl+Enter saves the Edit sheet, Ctrl+Shift+C / V copy
-and paste in the terminal.
+Ctrl+Shift+B toggle sidebar, Ctrl+Shift+1..9 and 0 jump to sections 1..10
+(0 is Settings), Esc closes the editor sheet and the Projects sheets (Edit,
+Related, Open with), Ctrl+S saves in the editor, Ctrl+Enter saves the Edit
+sheet, Ctrl+Shift+C / V copy and paste in the terminal.

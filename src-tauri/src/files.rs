@@ -412,6 +412,7 @@ pub fn allowed(path: &str, access: Access) -> Result<(PathBuf, PathBuf), String>
 pub struct ProjectExists {
     agents: bool,
     skills: bool,
+    rules: bool,
     settings: bool,
     settings_local: bool,
     mcp_json: bool,
@@ -460,6 +461,7 @@ pub fn project_info(root: &Path) -> ProjectInfo {
         exists: ProjectExists {
             agents: c.join("agents").is_dir(),
             skills: c.join("skills").is_dir(),
+            rules: c.join("rules").is_dir(),
             settings: c.join("settings.json").is_file(),
             settings_local: c.join("settings.local.json").is_file(),
             mcp_json: root.join(".mcp.json").is_file(),
@@ -693,6 +695,7 @@ mod tests {
         let h = f.home.to_string_lossy().to_string();
         assert!(r(&f, &format!("{h}/.claude"), Access::Read).is_ok());
         assert!(r(&f, &format!("{h}/.claude/agents/new/x.md"), Access::Write).is_ok());
+        assert!(r(&f, &format!("{h}/.claude/rules/frontend/react.md"), Access::Write).is_ok());
         assert!(r(&f, &format!("{h}/.claude.json"), Access::Write).is_ok());
         assert!(
             r(
@@ -767,6 +770,7 @@ mod tests {
         for (rel, access) in [
             (".claude/agents/x.md", Access::Write),
             (".claude/skills/new/SKILL.md", Access::Write),
+            (".claude/rules/frontend/react.md", Access::Write),
             (".claude/settings.json", Access::Write),
             (".claude/settings.local.json", Access::Read),
             (".claude", Access::Read),
@@ -1077,6 +1081,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().canonicalize().unwrap();
         fs::create_dir_all(root.join(".claude/agents")).unwrap();
+        fs::create_dir_all(root.join(".claude/rules/frontend")).unwrap();
         fs::write(root.join(".claude/settings.json"), "{}").unwrap();
         fs::write(root.join(".mcp.json"), "{}").unwrap();
         fs::write(root.join("CLAUDE.md"), "# x").unwrap();
@@ -1087,6 +1092,7 @@ mod tests {
             ProjectExists {
                 agents: true,
                 skills: false,
+                rules: true,
                 settings: true,
                 settings_local: false,
                 mcp_json: true,
@@ -1095,6 +1101,7 @@ mod tests {
             }
         );
         let v = serde_json::to_value(&info).unwrap();
+        assert_eq!(v["exists"]["rules"], true);
         assert_eq!(v["exists"]["settingsLocal"], false);
         assert_eq!(v["exists"]["mcpJson"], true);
         assert_eq!(v["exists"]["claudeLocalMd"], false);

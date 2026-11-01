@@ -1,13 +1,48 @@
 // Tiny frontmatter parser. Reads a leading `---` block of YAML-ish lines into a
 // flat record. Nested maps flatten to dotted keys (`metadata.type`), lists join
-// with ", ", block scalars (`>` / `|`) fold their indented lines. Pure, no deps.
+// with ", " (and also land as arrays in `lists`), block scalars (`>` / `|`)
+// fold their indented lines. Pure, no deps.
 
 export type Frontmatter = {
   data: Record<string, string>;
+  /** Keys whose value was a YAML list (block `- x` or inline `[x, y]`), items unquoted. */
+  lists: Record<string, string[]>;
   body: string;
   /** True when a leading `---` block was found. */
   present: boolean;
 };
+
+/** Split on commas outside quotes, braces and brackets (`{src,lib}/**` stays whole). */
+export function splitInline(s: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let quote = "";
+  let cur = "";
+  for (const ch of s) {
+    if (quote) {
+      if (ch === quote) quote = "";
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === "{" || ch === "[") {
+      depth++;
+    } else if ((ch === "}" || ch === "]") && depth > 0) {
+      depth--;
+    } else if (ch === "," && depth === 0) {
+      out.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+function inlineItems(s: string): string[] {
+  return splitInline(s.slice(1, -1))
+    .map((x) => unquote(x))
+    .filter(Boolean);
+}
 
 function unquote(v: string): string {
   const s = v.trim();
@@ -16,14 +51,7 @@ function unquote(v: string): string {
     return s[0] === '"' ? inner.replace(/\\"/g, '"').replace(/\\n/g, "\n") : inner.replace(/''/g, "'");
   }
   // inline list: [a, b]
-  if (s.startsWith("[") && s.endsWith("]")) {
-    return s
-      .slice(1, -1)
-      .split(",")
-      .map((x) => unquote(x))
-      .filter(Boolean)
-      .join(", ");
-  }
+  if (s.startsWith("[") && s.endsWith("]")) return inlineItems(s).join(", ");
   return s;
 }
 
@@ -35,10 +63,11 @@ function indentOf(line: string): number {
 export function parseFrontmatter(text: string): Frontmatter {
   const src = text.replace(/^﻿/, "");
   const m = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(src);
-  if (!m) return { data: {}, body: src, present: false };
+  if (!m) return { data: {}, lists: {}, body: src, present: false };
   const lines = m[1].split(/\r?\n/);
   const body = src.slice(m[0].length);
   const data: Record<string, string> = {};
+  const lists: Record<string, string[]> = {};
   // stack of [indent, keyPrefix]
   const stack: { indent: number; prefix: string }[] = [];
 
@@ -80,6 +109,7 @@ export function parseFrontmatter(text: string): Frontmatter {
           k++;
         }
         data[key] = items.join(", ");
+        lists[key] = items.filter(Boolean);
         i = k;
         continue;
       }
@@ -107,7 +137,8 @@ export function parseFrontmatter(text: string): Frontmatter {
     }
 
     data[key] = unquote(raw);
+    if (raw.startsWith("[") && raw.endsWith("]")) lists[key] = inlineItems(raw);
     i++;
   }
-  return { data, body, present: true };
+  return { data, lists, body, present: true };
 }

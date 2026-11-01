@@ -38,9 +38,12 @@ export function Row({
   active,
   clamp = 1,
   mono,
+  extra,
 }: {
   title: ReactNode;
   subtitle?: ReactNode;
+  /** Wrapping line under the subtitle (chips). */
+  extra?: ReactNode;
   badge?: ReactNode;
   actions?: ReactNode;
   onClick?: () => void;
@@ -75,6 +78,7 @@ export function Row({
         {subtitle && (
           <div className={cx("text-[11px] leading-snug text-fg-muted break-words", clamp === 2 ? "line-clamp-2" : "truncate")}>{subtitle}</div>
         )}
+        {extra && <div className="mt-0.5 flex min-w-0 flex-wrap gap-1">{extra}</div>}
       </div>
       {actions && (
         <div className="flex shrink-0 items-center opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" onClick={(e) => e.stopPropagation()}>
