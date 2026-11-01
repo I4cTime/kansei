@@ -16,11 +16,16 @@ pnpm install
 pnpm tauri build      # release bundle (deb, rpm, AppImage)
 ```
 
-`run-dev.sh` sets `__NV_DISABLE_EXPLICIT_SYNC=1`, because NVIDIA explicit sync
-makes WebKitGTK's DMA-BUF renderer die with "Missing acquire timeline" on this
-Hyprland machine (the software fallback `WEBKIT_DISABLE_DMABUF_RENDERER=1` works
-too but types with visible lag), and `TSUKUE_DRIVER=/tmp/tsukue-driver.sock`,
-a debug-only socket that runs JavaScript inside the webview for UI checks:
+On a machine with the NVIDIA driver the binary sets two driver variables for
+itself before GTK starts (main.rs), unless they are already set:
+`__NV_DISABLE_EXPLICIT_SYNC=1`, because NVIDIA explicit sync makes WebKitGTK's
+DMA-BUF renderer die with "Missing acquire timeline" (the software fallback
+`WEBKIT_DISABLE_DMABUF_RENDERER=1` works too but types with visible lag), and
+`__GL_SYNC_TO_VBLANK=0`, because otherwise a repaint while the window sits on a
+hidden Hyprland workspace blocks the main thread in eglSwapBuffers until the
+workspace is shown again ("Application Not Responding"). `run-dev.sh` sets
+`TSUKUE_DRIVER=/tmp/tsukue-driver.sock`, a debug-only socket that runs
+JavaScript inside the webview for UI checks:
 
 ```sh
 ./drive.py 'return t.store.get(t.tabs.tabsAtom).map(x => x.title)'

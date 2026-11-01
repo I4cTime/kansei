@@ -2,23 +2,35 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    nvidia_explicit_sync_workaround();
+    nvidia_workarounds();
     tsukue_lib::run()
 }
 
-/// WebKitGTK's DMA-BUF renderer dies on NVIDIA's explicit-sync Wayland
-/// protocol ("Missing acquire timeline", Gdk Error 71). Turning explicit sync
-/// off in the driver keeps the GPU renderer; the software fallback
-/// (WEBKIT_DISABLE_DMABUF_RENDERER) types with visible lag. Must run before
-/// GTK and EGL initialise, so it lives here, not in the Tauri setup hook.
-fn nvidia_explicit_sync_workaround() {
+/// Two NVIDIA driver settings, applied only when the NVIDIA driver is present
+/// and the user has not set them. Must run before GTK and EGL initialise, so
+/// they live here, not in the Tauri setup hook.
+///
+/// - `__NV_DISABLE_EXPLICIT_SYNC=1`: WebKitGTK's DMA-BUF renderer dies on
+///   NVIDIA's explicit-sync Wayland protocol ("Missing acquire timeline", Gdk
+///   Error 71). Turning explicit sync off keeps the GPU renderer; the software
+///   fallback (WEBKIT_DISABLE_DMABUF_RENDERER) types with visible lag.
+/// - `__GL_SYNC_TO_VBLANK=0`: with the default swap interval, eglSwapBuffers in
+///   libnvidia-egl-wayland waits for the compositor's frame callback. A window
+///   on a hidden Hyprland workspace never gets one, so any repaint (a tab
+///   printing output) blocked the GTK main thread until the workspace was
+///   shown again, 20 to 60 s in practice ("Application Not Responding").
+///   Swap interval 0 returns at once; GTK's frame clock still paces drawing.
+fn nvidia_workarounds() {
     #[cfg(target_os = "linux")]
     {
-        let nvidia = std::path::Path::new("/proc/driver/nvidia").exists();
-        let unset = std::env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none();
-        if nvidia && unset {
-            // SAFETY: single-threaded at this point, nothing has read the env yet.
-            unsafe { std::env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1") };
+        if !std::path::Path::new("/proc/driver/nvidia").exists() {
+            return;
+        }
+        for (key, value) in [("__NV_DISABLE_EXPLICIT_SYNC", "1"), ("__GL_SYNC_TO_VBLANK", "0")] {
+            if std::env::var_os(key).is_none() {
+                // SAFETY: single-threaded at this point, nothing has read the env yet.
+                unsafe { std::env::set_var(key, value) };
+            }
         }
     }
 }

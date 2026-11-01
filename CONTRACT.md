@@ -170,6 +170,12 @@ for the terminal (Omarchy ships it).
   SIGKILL after 3 s. Env drops `CLAUDECODE` and `CLAUDE_CODE_ENTRYPOINT` so a
   tab's `claude` does not think it is nested; AppImage library variables are
   stripped.
+- NVIDIA driver variables (`src-tauri/src/main.rs`, before GTK starts, only when
+  /proc/driver/nvidia exists and the variable is unset): `__NV_DISABLE_EXPLICIT_SYNC=1`
+  (explicit sync kills WebKitGTK's DMA-BUF renderer, Gdk Error 71) and
+  `__GL_SYNC_TO_VBLANK=0` (swap interval 1 makes eglSwapBuffers wait for a
+  frame callback that a window on a hidden Hyprland workspace never gets, which
+  blocked the main thread for the whole time the workspace was hidden).
 - Watchdog (`src-tauri/src/watchdog.rs`): a thread posts a ping to the main
   thread every 500 ms (`run_on_main_thread`, one in flight at most). No pong for
   over 3 s logs `stall start after <ms> ms without pong` and runs
