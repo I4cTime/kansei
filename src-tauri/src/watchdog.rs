@@ -159,7 +159,7 @@ pub fn start(app: &tauri::AppHandle) {
     let env = |k: &str| std::env::var(k).unwrap_or_else(|_| "unset".into());
     note(&format!(
         "start tsukue {} ({}) pid {}, nvidia driver {}, __NV_DISABLE_EXPLICIT_SYNC={}, \
-         WEBKIT_DISABLE_DMABUF_RENDERER={}, GDK_BACKEND={}",
+         __GL_SYNC_TO_VBLANK={}, WEBKIT_DISABLE_DMABUF_RENDERER={}, GDK_BACKEND={}",
         env!("CARGO_PKG_VERSION"),
         if cfg!(debug_assertions) {
             "debug"
@@ -173,6 +173,7 @@ pub fn start(app: &tauri::AppHandle) {
             "absent"
         },
         env("__NV_DISABLE_EXPLICIT_SYNC"),
+        env("__GL_SYNC_TO_VBLANK"),
         env("WEBKIT_DISABLE_DMABUF_RENDERER"),
         env("GDK_BACKEND"),
     ));

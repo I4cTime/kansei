@@ -6,8 +6,11 @@ fn main() {
     tsukue_lib::run()
 }
 
-/// Two NVIDIA driver settings, applied only when the NVIDIA driver is present
-/// and the user has not set them. Must run before GTK and EGL initialise, so
+/// Two NVIDIA driver settings, forced whenever the NVIDIA driver is present.
+/// They override the session: a gaming profile in ~/.config/environment.d
+/// exports `__GL_SYNC_TO_VBLANK=1`, and honouring it brought the hidden-workspace
+/// hang back (stalls of 36 to 115 s on 2026-11-01). Set `TSUKUE_NVIDIA_ENV=keep`
+/// to leave the environment alone. Must run before GTK and EGL initialise, so
 /// they live here, not in the Tauri setup hook.
 ///
 /// - `__NV_DISABLE_EXPLICIT_SYNC=1`: WebKitGTK's DMA-BUF renderer dies on
@@ -26,11 +29,12 @@ fn nvidia_workarounds() {
         if !std::path::Path::new("/proc/driver/nvidia").exists() {
             return;
         }
+        if std::env::var_os("TSUKUE_NVIDIA_ENV").is_some_and(|v| v == "keep") {
+            return;
+        }
         for (key, value) in [("__NV_DISABLE_EXPLICIT_SYNC", "1"), ("__GL_SYNC_TO_VBLANK", "0")] {
-            if std::env::var_os(key).is_none() {
-                // SAFETY: single-threaded at this point, nothing has read the env yet.
-                unsafe { std::env::set_var(key, value) };
-            }
+            // SAFETY: single-threaded at this point, nothing has read the env yet.
+            unsafe { std::env::set_var(key, value) };
         }
     }
 }

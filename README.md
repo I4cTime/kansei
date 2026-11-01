@@ -18,7 +18,9 @@ pnpm tauri build      # release bundle (deb, rpm, AppImage)
 ```
 
 On a machine with the NVIDIA driver the binary sets two driver variables for
-itself before GTK starts (main.rs), unless they are already set:
+itself before GTK starts (main.rs), overriding the session (a gaming profile
+in ~/.config/environment.d exports `__GL_SYNC_TO_VBLANK=1`; set
+`TSUKUE_NVIDIA_ENV=keep` to opt out):
 `__NV_DISABLE_EXPLICIT_SYNC=1`, because NVIDIA explicit sync makes WebKitGTK's
 DMA-BUF renderer die with "Missing acquire timeline" (the software fallback
 `WEBKIT_DISABLE_DMABUF_RENDERER=1` works too but types with visible lag), and
