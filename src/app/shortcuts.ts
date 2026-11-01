@@ -6,7 +6,25 @@ export type ShortcutAction =
   | { type: "prevTab" }
   | { type: "nextTab" }
   | { type: "toggleSidebar" }
-  | { type: "section"; index: number };
+  | { type: "section"; index: number }
+  | { type: "panel"; id: string };
+
+/**
+ * Panels past the tenth have their own letter (Ctrl+Shift+1..9,0 cover the
+ * first ten in nav order): Hooks is Ctrl+Shift+H, Settings Ctrl+Shift+,.
+ */
+export const PANEL_KEYS: Record<string, { code: string; label: string }> = {
+  hooks: { code: "KeyH", label: "Ctrl+Shift+H" },
+  settings: { code: "Comma", label: "Ctrl+Shift+," },
+};
+
+/** The shortcut shown for the panel at nav position `index` with id `id`, or null. */
+export function panelShortcut(id: string, index: number): string | null {
+  if (PANEL_KEYS[id]) return PANEL_KEYS[id].label;
+  if (index < 9) return `Ctrl+Shift+${index + 1}`;
+  if (index === 9) return "Ctrl+Shift+0";
+  return null;
+}
 
 export function matchShortcut(e: KeyboardEvent): ShortcutAction | null {
   if (!e.ctrlKey || e.altKey || e.metaKey) return null;
@@ -23,6 +41,7 @@ export function matchShortcut(e: KeyboardEvent): ShortcutAction | null {
     case "KeyB":
       return { type: "toggleSidebar" };
   }
+  for (const [id, k] of Object.entries(PANEL_KEYS)) if (e.code === k.code) return { type: "panel", id };
   // Digit1..9 are sections 1..9, Digit0 is section 10.
   const m = /^Digit([0-9])$/.exec(e.code);
   if (m) return { type: "section", index: m[1] === "0" ? 9 : Number(m[1]) - 1 };

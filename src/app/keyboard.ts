@@ -28,6 +28,9 @@ function run(a: ShortcutAction) {
       if (panel) setPrefs({ sidebarSection: panel.id, sidebarCollapsed: false });
       return;
     }
+    case "panel":
+      if (PANELS.some((p) => p.id === a.id)) setPrefs({ sidebarSection: a.id, sidebarCollapsed: false });
+      return;
   }
 }
 

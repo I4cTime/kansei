@@ -1,9 +1,34 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useAtomValue } from "jotai";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { CalendarDays, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { PANELS } from "../panels";
+import { snapshotAtom } from "../panels/board/model";
+import { dayTasks, scheduleAtom, todayAtom, todayPlan } from "../panels/calendar/model";
 import { SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_RAIL, clampSidebar, prefsAtom, setPrefs } from "./prefs";
+import { panelShortcut } from "./shortcuts";
 import { IconButton } from "./ui";
+
+/** One line above the nav: today's area and how many tasks are scheduled. Opens Calendar. */
+function TodayStrip() {
+  const today = useAtomValue(todayAtom);
+  const schedule = useAtomValue(scheduleAtom);
+  const snap = useAtomValue(snapshotAtom);
+  const plan = todayPlan(schedule, today);
+  const n = dayTasks(snap?.items ?? [], today).length;
+  const text = `Today · ${plan.area ?? "no plan"} · ${n} ${n === 1 ? "task" : "tasks"}`;
+  return (
+    <button
+      type="button"
+      onClick={() => setPrefs({ sidebarSection: "calendar", sidebarCollapsed: false })}
+      title={`${today}${plan.note ? `: ${plan.note}` : ""}. Open the Calendar`}
+      data-today-strip=""
+      className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 border-b border-border px-3 text-left text-[12px] text-fg-muted hover:bg-bg-hover hover:text-fg"
+    >
+      <CalendarDays size={13} strokeWidth={1.75} className={plan.area ? "shrink-0 text-accent" : "shrink-0"} />
+      <span className="min-w-0 truncate">{text}</span>
+    </button>
+  );
+}
 
 export function Sidebar() {
   const prefs = useAtomValue(prefsAtom);
@@ -55,18 +80,20 @@ export function Sidebar() {
         />
       </div>
 
+      {!collapsed && <TodayStrip />}
+
       {PANELS.length > 0 && (
         <nav className={`flex shrink-0 flex-col gap-px py-1.5 ${collapsed ? "items-center" : "px-1.5"} ${collapsed ? "" : "border-b border-border"}`}>
           {PANELS.map((p, i) => {
             const isActive = p.id === active?.id;
             const Icon = p.icon;
-            const digit = i < 9 ? String(i + 1) : i === 9 ? "0" : null;
-            const hint = digit ? ` (Ctrl+Shift+${digit})` : "";
+            const keys = panelShortcut(p.id, i);
+            const hint = keys ? ` (${keys})` : "";
             return (
               <button
                 key={p.id}
                 type="button"
-                title={collapsed ? `${p.label}${hint}` : digit ? `Ctrl+Shift+${digit}` : undefined}
+                title={collapsed ? `${p.label}${hint}` : (keys ?? undefined)}
                 aria-label={p.label}
                 aria-current={isActive ? "page" : undefined}
                 onClick={() => setPrefs({ sidebarSection: p.id, sidebarCollapsed: false })}

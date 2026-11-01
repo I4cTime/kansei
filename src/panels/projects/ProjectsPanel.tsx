@@ -30,6 +30,16 @@ import {
   type TreeRef,
 } from "./workspace";
 import { registryAtom, saveEntry, saveRelated, scanWorkspaces, treeAtom } from "./workspaceStore";
+import { areaProject } from "../board/model";
+import { scheduleAtom, todayAtom, todayPlan } from "../calendar/model";
+
+/** `nodes` with the one that is (or contains) `path` moved to the front; order otherwise kept. */
+function todayFirst(nodes: WorkspaceNode[], path: string | null): WorkspaceNode[] {
+  if (!path) return nodes;
+  const has = (n: WorkspaceNode): boolean => n.path === path || n.children.some(has);
+  const i = nodes.findIndex(has);
+  return i <= 0 ? nodes : [nodes[i], ...nodes.slice(0, i), ...nodes.slice(i + 1)];
+}
 
 const AUTO_REFRESH_MS = 15_000;
 /** projects_info looks at no more than this many paths per call. */
@@ -146,6 +156,8 @@ export function ProjectsPanel() {
   const [q, setQ] = useState("");
   const [view, setView] = useState<ProjectFilter>("tree");
   const [now, setNow] = useState(() => Date.now());
+  const schedule = useAtomValue(scheduleAtom);
+  const today = useAtomValue(todayAtom);
 
   const home = data?.home;
   useEffect(() => setNow(Date.now()), [data]);
@@ -212,7 +224,15 @@ export function ProjectsPanel() {
     return [m.entry.description, m.entry.status ?? "", m.ref?.rel ?? ""].join("\n");
   }, [metaFor]);
 
-  const flat = useMemo(() => filterRows(rows, q, view, home, describe), [rows, q, view, home, describe]);
+  // The project of today's area (Calendar) gets a "today" chip and sorts first in its group.
+  const todayArea = todayPlan(schedule, today).area;
+  const todayPath = useMemo(() => areaProject(todayArea, trees, registry), [todayArea, trees, registry]);
+  const todayKey = todayPath ? keyOf(normPath(todayPath)) : null;
+  const flat = useMemo(() => {
+    const list = filterRows(rows, q, view, home, describe);
+    const i = todayKey ? list.findIndex((r) => r.path === todayKey) : -1;
+    return i <= 0 ? list : [list[i], ...list.slice(0, i), ...list.slice(i + 1)];
+  }, [rows, q, view, home, describe, todayKey]);
   const groups = useMemo(() => groupRows(flat, view === "all" ? "All" : "Recent"), [flat, view]);
   const liveCount = rows.reduce((n, r) => n + (r.live > 0 ? 1 : 0), 0);
   const hiddenCount = rows.filter((r) => r.hidden).length;
@@ -316,6 +336,7 @@ export function ProjectsPanel() {
         toggle={opts.toggle}
         now={now}
         inTab={inTabFor(r)}
+        today={todayKey !== null && r.path === todayKey ? todayArea : null}
         actions={actions}
       />
     );
@@ -390,6 +411,7 @@ export function ProjectsPanel() {
           describe={describeNode}
           collapsed={prefs.collapsedPaths}
           expanded={prefs.expandedPaths}
+          todayPath={todayPath}
           rowView={rowView}
         />
       )}
@@ -419,6 +441,7 @@ function TreeView({
   describe,
   collapsed,
   expanded,
+  todayPath,
   rowView,
 }: {
   trees: WorkspaceNode[];
@@ -430,6 +453,7 @@ function TreeView({
   describe: (n: WorkspaceNode) => string;
   collapsed: string[];
   expanded: string[];
+  todayPath: string | null;
   rowView: (r: ProjectRow, opts: { label?: string; sub?: string; indent?: number; toggle?: Toggle }) => ReactNode;
 }) {
   const searching = words.length > 0;
@@ -452,7 +476,7 @@ function TreeView({
     const r = rowFor(n.path);
     if (!r) return null;
     const ref = index.get(n.path);
-    const subs = n.children;
+    const subs = todayFirst(n.children, todayPath);
     const open = searching ? subs.length > 0 : expanded.includes(n.path);
     const toggle = subs.length > 0 ? { open, count: subs.length, onToggle: () => flip("expandedPaths", n.path) } : undefined;
     return (
@@ -471,7 +495,7 @@ function TreeView({
     return (
       <div key={g.path}>
         <TreeHeader name={g.name} title={g.path} count={countProjects(g)} open={!closed} depth={depth} onToggle={() => flip("collapsedPaths", g.path)} />
-        {!closed && g.children.map((c) => (c.kind === "group" ? group(c, depth + 1) : project(c, depth + 1)))}
+        {!closed && todayFirst(g.children, todayPath).map((c) => (c.kind === "group" ? group(c, depth + 1) : project(c, depth + 1)))}
       </div>
     );
   };
@@ -496,7 +520,7 @@ function TreeView({
               {closed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
             </button>
             {/* Projects directly under the root (a depth-1 repo) first, then the groups. */}
-            {!closed && rootParts(root).top.map((p) => project(p, 0))}
+            {!closed && todayFirst(rootParts(root).top, todayPath).map((p) => project(p, 0))}
             {!closed && rootParts(root).groups.map((g) => group(g, 0))}
           </div>
         );
@@ -533,6 +557,7 @@ function ProjectRowView({
   toggle,
   now,
   inTab,
+  today,
   actions,
 }: {
   r: ProjectRow;
@@ -544,6 +569,8 @@ function ProjectRowView({
   now: number;
   /** Title of the active tab when this row is its project, else null. */
   inTab: string | null;
+  /** Today's area when this is its project (Calendar), else null. */
+  today: string | null;
   actions: Actions;
 }) {
   const gone = "Folder does not exist";
@@ -587,6 +614,11 @@ function ProjectRowView({
           {label}
           {!r.exists && <span className="text-fg-muted"> (missing folder)</span>}
         </span>
+        {today !== null && (
+          <Badge tone="accent" title={`Today's area in the Calendar: ${today}`} className="bg-accent/15">
+            today
+          </Badge>
+        )}
         {entry.status && <Badge tone={STATUS_TONE[entry.status]}>{entry.status}</Badge>}
         {r.pinned && <Pin size={11} strokeWidth={2.25} className="shrink-0 text-accent" aria-label="Pinned" />}
         {r.live > 0 && (
