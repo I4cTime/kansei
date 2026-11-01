@@ -1,14 +1,15 @@
-import { useCallback, useMemo, useState, type CSSProperties } from "react";
-import { Braces, Eye, EyeOff, Plus, Trash } from "lucide-react";
-import { mcp, type McpServer } from "../../lib/ipc";
+import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { Braces, ChevronDown, ChevronRight, Eye, EyeOff, FileText, Plus, Trash } from "lucide-react";
+import { mcp, type McpExtras, type McpServer } from "../../lib/ipc";
 import { Badge, Button, Field, IconButton, Select, TextArea, TextInput, cx } from "../ui";
 import { CodeEditor } from "../shared/CodeEditor";
+import { useOpenEditor } from "../shared/EditorSheet";
 import { errText, useLoad, usePaths, useToast } from "../shared/hooks";
 import { ConfirmBar, EmptyState, Note, Panel, Row, SectionHeader } from "../shared/list";
 import { basename, joinPath, tildify } from "../shared/paths";
 import { ScopeSwitch, useScope } from "../shared/ScopeSwitch";
 import { refreshProject } from "../../app/project";
-import { configFromForm, emptyForm, formFromConfig, summaryOf, transportOf, type McpForm } from "./model";
+import { configFromForm, emptyForm, formFromConfig, shortVersion, summaryOf, targetOf, transportOf, type McpForm } from "./model";
 
 const keyOf = (s: { scope: string; project?: string; name: string }) => `${s.scope}|${s.project ?? ""}|${s.name}`;
 
@@ -43,6 +44,10 @@ export function McpPanel() {
   const servers = useLoad(
     useCallback(() => mcp.list(projectRoot ?? undefined), [projectRoot]),
     [projectRoot],
+  );
+  const extras = useLoad(
+    useCallback(() => mcp.extras(), []),
+    [],
   );
   const [editing, setEditing] = useState<string | null>(null); // key, or "new"
 
@@ -83,8 +88,11 @@ export function McpPanel() {
   return (
     <Panel
       title="MCP servers"
-      loading={servers.loading}
-      onRefresh={() => void servers.reload()}
+      loading={servers.loading || extras.loading}
+      onRefresh={() => {
+        void servers.reload();
+        void extras.reload();
+      }}
       actions={<IconButton icon={Plus} title="Add server" onClick={() => setEditing("new")} />}
     >
       <ScopeSwitch
@@ -127,6 +135,7 @@ export function McpPanel() {
               ? ` ${claudeJsonForRoot} more for this path ${claudeJsonForRoot === 1 ? "is" : "are"} stored in ~/.claude.json and listed under User > ${basename(projectRoot) || projectRoot}.`
               : " Entries for this path in ~/.claude.json, if any, are listed under User > " + (basename(projectRoot) || projectRoot) + "."}
           </Note>
+          <ExtrasGroups data={extras.data} home={paths?.home} />
           <div className="h-3" />
         </>
       ) : (
@@ -168,10 +177,110 @@ export function McpPanel() {
             Reads and writes the mcpServers blocks of ~/.claude.json. Servers in a repo's .mcp.json are under the Project scope. A backup is kept at
             ~/.claude.json.tsukue-bak.
           </Note>
+          <ExtrasGroups data={extras.data} home={paths?.home} />
           <div className="h-3" />
         </>
       )}
     </Panel>
+  );
+}
+
+/** Section header that folds its group. Same look as SectionHeader plus a chevron. */
+function FoldHeader({ title, count, open, onToggle }: { title: string; count: number; open: boolean; onToggle: () => void }) {
+  const Icon = open ? ChevronDown : ChevronRight;
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={onToggle}
+      className="sticky top-0 z-10 flex w-full cursor-pointer items-center gap-1 bg-bg px-3 pt-3 pb-1 text-left text-fg-muted hover:text-fg"
+    >
+      <Icon size={13} className="shrink-0" />
+      <span className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-wide">{title}</span>
+      <span className="text-[11px] tabular-nums">{count}</span>
+    </button>
+  );
+}
+
+function MutedLine({ children }: { children: ReactNode }) {
+  return <div className="px-3 py-1 text-[11px] text-fg-muted">{children}</div>;
+}
+
+/**
+ * Read-only groups below the editable servers: plugin servers, claude.ai
+ * connectors and built-ins (mcp_extras). No edit or delete; plugin rows can
+ * open their .mcp.json read-only.
+ */
+function ExtrasGroups({ data, home }: { data: McpExtras | null; home: string | undefined }) {
+  const openEditor = useOpenEditor();
+  const [closed, setClosed] = useState<Record<string, boolean>>({});
+  const flip = (k: string) => setClosed((c) => ({ ...c, [k]: !c[k] }));
+  if (!data) return null;
+  const muted = (t: string) => <span className="text-fg-muted">{t}</span>;
+  return (
+    <div data-mcp-extras>
+      <FoldHeader title="Plugins" count={data.plugins.length} open={!closed.plugins} onToggle={() => flip("plugins")} />
+      {!closed.plugins && (
+        <>
+          {data.plugins.length === 0 && <MutedLine>No installed plugin ships MCP servers.</MutedLine>}
+          {data.plugins.map((p) => {
+            const note = typeof p.config.note === "string" ? p.config.note : "";
+            const target = targetOf(p.config);
+            const version = shortVersion(p.version);
+            return (
+              <Row
+                key={`${p.file}|${p.name}`}
+                title={muted(p.name)}
+                badge={<Badge tone="muted">{transportOf(p.config)}</Badge>}
+                subtitle={note || <span className="font-mono">{target}</span>}
+                clamp={note ? 2 : 1}
+                tooltip={[summaryOf(p.config), note, `Plugin ${p.plugin}${p.marketplace ? `@${p.marketplace}` : ""}${p.version ? ` ${p.version}` : ""}`].filter(Boolean).join("\n")}
+                extra={
+                  <>
+                    <Badge title={tildify(p.file, home)}>{version ? `${p.plugin} ${version}` : p.plugin}</Badge>
+                    {note && target && <Badge className="font-mono">{target}</Badge>}
+                    {p.enabled === false && <Badge tone="warn">disabled</Badge>}
+                    {p.needsAuth && <Badge tone="warn">needs auth</Badge>}
+                    {p.scope && p.scope !== "user" && <Badge title={p.projectPath ?? undefined}>{p.scope}</Badge>}
+                  </>
+                }
+                actions={
+                  <IconButton
+                    icon={FileText}
+                    title={`Open ${tildify(p.file, home)} (read only)`}
+                    onClick={() => openEditor({ path: p.file, title: `${p.plugin} .mcp.json`, readOnly: true, note: "Installed by the plugin. Claude Code manages this file; Tsukue only shows it." })}
+                  />
+                }
+              />
+            );
+          })}
+        </>
+      )}
+      <FoldHeader title="claude.ai connectors" count={data.connectors.length} open={!closed.connectors} onToggle={() => flip("connectors")} />
+      {!closed.connectors && (
+        <>
+          {data.connectors.length === 0 && <MutedLine>None recorded</MutedLine>}
+          {data.connectors.map((c) => (
+            <Row
+              key={c.name}
+              title={muted(c.name)}
+              subtitle="Managed at claude.ai, not editable here"
+              extra={c.needsAuth ? <Badge tone="warn">needs auth</Badge> : undefined}
+            />
+          ))}
+        </>
+      )}
+      <FoldHeader title="Built-in" count={data.builtins.length} open={!closed.builtins} onToggle={() => flip("builtins")} />
+      {!closed.builtins && (
+        <>
+          {data.builtins.length === 0 && <MutedLine>None enabled</MutedLine>}
+          {data.builtins.map((b) => (
+            <Row key={b.name} title={muted(b.name)} subtitle={b.note} />
+          ))}
+        </>
+      )}
+      <Note className="pt-2">Read only. Plugins come from ~/.claude/plugins, connectors and built-ins from ~/.claude.json.</Note>
+    </div>
   );
 }
 

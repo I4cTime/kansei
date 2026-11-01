@@ -13,7 +13,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { b64ToBytes, pty } from "../lib/ipc";
 import { overlayAtom } from "../lib/overlay";
-import { prefsAtom } from "./prefs";
+import { prefsAtom, spawnCommand } from "./prefs";
 import { matchShortcut } from "./shortcuts";
 import { store, toastError } from "./store";
 import { getTab, tabsAtom, updateTab } from "./tabState";
@@ -302,14 +302,16 @@ export async function spawnTab(key: string): Promise<void> {
   const e = entries.get(key);
   if (!tab || !e || tab.status !== "spawning" || tab.id) return;
   spawning.add(key);
+  let command = tab.command;
   try {
     await startPtyRouting();
+    command = await spawnCommand(tab.command);
     let dims = fitTerminal(key);
     if (!dims) {
       dims = lastGood;
       e.term.resize(dims.cols, dims.rows);
     }
-    const { id } = await pty.spawn({ cwd: tab.cwd, command: tab.command, args: tab.args, cols: dims.cols, rows: dims.rows });
+    const { id } = await pty.spawn({ cwd: tab.cwd, command, args: tab.args, cols: dims.cols, rows: dims.rows });
     if (!getTab(key) || !entries.has(key)) {
       // Closed while spawning.
       pending.delete(id);
@@ -330,7 +332,7 @@ export async function spawnTab(key: string): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     updateTab(key, { id: null, status: "dead", exitCode: null, error: msg });
-    toastError(err, `Could not start ${tab.command}`);
+    toastError(err, `Could not start ${command}`);
   } finally {
     spawning.delete(key);
   }

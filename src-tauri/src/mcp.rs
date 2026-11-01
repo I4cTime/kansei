@@ -379,6 +379,197 @@ pub async fn mcp_remove(scope: Scope, project: Option<String>, name: String) -> 
     .await
 }
 
+// ---------------------------------------------------------------------------
+// Read-only extras: plugin servers, claude.ai connectors, built-ins
+// ---------------------------------------------------------------------------
+
+/// One MCP server shipped by an installed plugin (`<installPath>/.mcp.json`).
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginServer {
+    /// Plugin name (the part of the `name@marketplace` key before the last `@`).
+    plugin: String,
+    marketplace: Option<String>,
+    version: Option<String>,
+    /// Install scope from installed_plugins.json ("user", "project", ...).
+    scope: Option<String>,
+    project_path: Option<String>,
+    /// `enabledPlugins["name@marketplace"]` in ~/.claude/settings.json, when set.
+    enabled: Option<bool>,
+    name: String,
+    config: Value,
+    /// The `.mcp.json` the server came from (under ~/.claude/plugins).
+    file: String,
+    /// Listed in ~/.claude.json `mcpNeedsAuthNoticed` as `plugin:<plugin>:<name>`.
+    needs_auth: bool,
+}
+
+/// A claude.ai connector recorded in ~/.claude.json `claudeAiMcpEverConnected`.
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Connector {
+    name: String,
+    needs_auth: bool,
+}
+
+/// A server built into Claude Code (today only `claude-in-chrome`).
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Builtin {
+    name: String,
+    note: String,
+}
+
+#[derive(Serialize, Debug, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpExtras {
+    plugins: Vec<PluginServer>,
+    connectors: Vec<Connector>,
+    builtins: Vec<Builtin>,
+}
+
+/// Parse a JSON object file; missing, unreadable or invalid files give None.
+fn read_object(path: &Path) -> Option<Map<String, Value>> {
+    match read_json(path).ok()? {
+        Value::Object(m) => Some(m),
+        _ => None,
+    }
+}
+
+/// `<install_path>/.mcp.json` when `install_path` is absolute, has no `..` and
+/// the file stays inside `plugins` both as written and with symlinks resolved.
+/// Returns the path as written (the front end opens it read-only).
+fn plugin_mcp_json(plugins: &Path, c_plugins: &Path, install_path: &str) -> Option<PathBuf> {
+    let p = Path::new(install_path);
+    if !p.is_absolute()
+        || p.components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+    let file = p.join(".mcp.json");
+    if !file.starts_with(plugins) {
+        return None;
+    }
+    let canonical = file.canonicalize().ok()?;
+    (canonical.starts_with(c_plugins) && canonical.is_file()).then_some(file)
+}
+
+/// Strings of a JSON array; objects contribute their `name` (or `id`) field.
+fn names_of(v: Option<&Value>) -> Vec<String> {
+    let Some(Value::Array(items)) = v else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = Vec::new();
+    for item in items {
+        let name = match item {
+            Value::String(s) => Some(s.clone()),
+            Value::Object(o) => o
+                .get("name")
+                .or_else(|| o.get("id"))
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            _ => None,
+        };
+        if let Some(n) = name.filter(|n| !n.trim().is_empty())
+            && !out.contains(&n)
+        {
+            out.push(n);
+        }
+    }
+    out
+}
+
+/// Everything Claude Code loads besides the editable `mcpServers` blocks, read
+/// from `home` (`.claude.json`, `.claude/settings.json`,
+/// `.claude/plugins/installed_plugins.json` and each plugin's `.mcp.json`).
+/// Never writes. Plugin files outside `home/.claude/plugins` are skipped.
+pub fn extras_at(home: &Path) -> McpExtras {
+    let claude_json = read_object(&home.join(".claude.json")).unwrap_or_default();
+    let needs_auth = names_of(claude_json.get("mcpNeedsAuthNoticed"));
+    let settings = read_object(&home.join(".claude").join("settings.json")).unwrap_or_default();
+    let enabled = settings.get("enabledPlugins").and_then(Value::as_object);
+
+    let mut out = McpExtras::default();
+
+    let plugins_dir = home.join(".claude").join("plugins");
+    if let (Ok(c_plugins), Some(installed)) = (
+        plugins_dir.canonicalize(),
+        read_object(&plugins_dir.join("installed_plugins.json")),
+    ) && let Some(Value::Object(plugins)) = installed.get("plugins")
+    {
+        let mut seen: Vec<PathBuf> = Vec::new();
+        for (key, installs) in plugins {
+            let (plugin, marketplace) = match key.rsplit_once('@') {
+                Some((n, m)) if !n.is_empty() => (n.to_string(), Some(m.to_string())),
+                _ => (key.clone(), None),
+            };
+            let installs: Vec<&Value> = match installs {
+                Value::Array(a) => a.iter().collect(),
+                Value::Object(_) => vec![installs],
+                _ => Vec::new(),
+            };
+            for install in installs {
+                let Some(inst) = install.as_object() else {
+                    continue;
+                };
+                let Some(file) = inst
+                    .get("installPath")
+                    .and_then(Value::as_str)
+                    .and_then(|p| plugin_mcp_json(&plugins_dir, &c_plugins, p))
+                else {
+                    continue;
+                };
+                if seen.contains(&file) {
+                    continue;
+                }
+                seen.push(file.clone());
+                let Some(Value::Object(servers)) =
+                    read_object(&file).and_then(|mut m| m.remove("mcpServers"))
+                else {
+                    continue;
+                };
+                let text = |k: &str| inst.get(k).and_then(Value::as_str).map(str::to_string);
+                for (name, config) in servers {
+                    out.plugins.push(PluginServer {
+                        needs_auth: needs_auth.contains(&format!("plugin:{plugin}:{name}")),
+                        plugin: plugin.clone(),
+                        marketplace: marketplace.clone(),
+                        version: text("version"),
+                        scope: text("scope"),
+                        project_path: text("projectPath"),
+                        enabled: enabled.and_then(|e| e.get(key)).and_then(Value::as_bool),
+                        name,
+                        config,
+                        file: file.to_string_lossy().into_owned(),
+                    });
+                }
+            }
+        }
+    }
+
+    out.connectors = names_of(claude_json.get("claudeAiMcpEverConnected"))
+        .into_iter()
+        .map(|name| Connector {
+            needs_auth: needs_auth.contains(&name),
+            name,
+        })
+        .collect();
+
+    if claude_json.get("claudeInChromeDefaultEnabled") == Some(&Value::Bool(true)) {
+        out.builtins.push(Builtin {
+            name: "claude-in-chrome".into(),
+            note: "Chrome extension, built into Claude Code".into(),
+        });
+    }
+    out
+}
+
+#[tauri::command]
+pub async fn mcp_extras() -> Result<McpExtras, String> {
+    blocking(|| Ok(extras_at(&crate::files::home_dir()?))).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -689,6 +880,135 @@ mod tests {
         let root = tmp.path().canonicalize().unwrap();
         let err = project_file_path(Some(&root.to_string_lossy()), Access::Write).unwrap_err();
         assert!(err.starts_with("path not allowed"), "{err}");
+    }
+
+    fn write(p: &Path, text: &str) {
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, text).unwrap();
+    }
+
+    /// A fake home with three plugins (two with servers, one without .mcp.json),
+    /// one install pointing outside ~/.claude/plugins, connectors and Chrome.
+    fn extras_home() -> (tempfile::TempDir, PathBuf) {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().canonicalize().unwrap();
+        let plugins = home.join(".claude/plugins");
+        let cache = plugins.join("cache/official");
+        write(
+            &cache.join("vercel/0.50.0/.mcp.json"),
+            r#"{ "mcpServers": { "vercel": { "type": "http", "url": "https://mcp.vercel.com", "note": "OAuth on first use" } } }"#,
+        );
+        write(
+            &cache.join("context7/abc/.mcp.json"),
+            r#"{ "mcpServers": { "zeta": { "command": "z" }, "context7": { "type": "http", "url": "https://mcp.context7.com/mcp" } } }"#,
+        );
+        fs::create_dir_all(cache.join("lsp/1.0.0")).unwrap();
+        // Outside the plugins dir: must never be read.
+        write(
+            &home.join("elsewhere/.mcp.json"),
+            r#"{ "mcpServers": { "evil": { "command": "x" } } }"#,
+        );
+        let installed = format!(
+            r#"{{
+  "version": 2,
+  "plugins": {{
+    "vercel@official": [ {{ "scope": "user", "installPath": "{c}/vercel/0.50.0", "version": "0.50.0" }} ],
+    "context7@official": [ {{ "scope": "user", "installPath": "{c}/context7/abc", "version": "abc" }},
+                           {{ "scope": "project", "installPath": "{c}/context7/abc", "version": "abc" }} ],
+    "lsp@official": [ {{ "scope": "user", "installPath": "{c}/lsp/1.0.0", "version": "1.0.0" }} ],
+    "evil@official": [ {{ "scope": "user", "installPath": "{h}/elsewhere" }},
+                       {{ "scope": "user", "installPath": "{c}/../../../elsewhere" }} ]
+  }}
+}}"#,
+            c = cache.display(),
+            h = home.display()
+        );
+        write(&plugins.join("installed_plugins.json"), &installed);
+        write(
+            &home.join(".claude/settings.json"),
+            r#"{ "enabledPlugins": { "vercel@official": true, "context7@official": false } }"#,
+        );
+        write(
+            &home.join(".claude.json"),
+            r#"{ "mcpServers": {}, "claudeAiMcpEverConnected": ["claude.ai Docs", { "name": "claude.ai Gmail" }, "claude.ai Docs", 3],
+                 "mcpNeedsAuthNoticed": ["plugin:context7:context7", "claude.ai Gmail"], "claudeInChromeDefaultEnabled": true }"#,
+        );
+        (tmp, home)
+    }
+
+    #[test]
+    fn extras_list_plugins_connectors_and_builtins() {
+        let (_t, home) = extras_home();
+        let x = extras_at(&home);
+        let rows: Vec<_> = x
+            .plugins
+            .iter()
+            .map(|p| (p.plugin.as_str(), p.name.as_str(), p.enabled, p.needs_auth))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("vercel", "vercel", Some(true), false),
+                ("context7", "zeta", Some(false), false),
+                ("context7", "context7", Some(false), true),
+            ]
+        );
+        let v = &x.plugins[0];
+        assert_eq!(v.marketplace.as_deref(), Some("official"));
+        assert_eq!(v.version.as_deref(), Some("0.50.0"));
+        assert_eq!(v.scope.as_deref(), Some("user"));
+        assert_eq!(v.config["note"], "OAuth on first use");
+        assert!(v.file.ends_with("vercel/0.50.0/.mcp.json"));
+        let json = serde_json::to_value(&x).unwrap();
+        assert_eq!(json["plugins"][0]["needsAuth"], false);
+        assert_eq!(json["plugins"][0]["projectPath"], Value::Null);
+        // No read ever leaves ~/.claude/plugins.
+        assert!(x.plugins.iter().all(|p| {
+            p.file
+                .starts_with(&*home.join(".claude/plugins").to_string_lossy())
+        }));
+        assert!(!x.plugins.iter().any(|p| p.name == "evil"));
+
+        let c: Vec<_> = x
+            .connectors
+            .iter()
+            .map(|c| (c.name.as_str(), c.needs_auth))
+            .collect();
+        assert_eq!(c, [("claude.ai Docs", false), ("claude.ai Gmail", true)]);
+        assert_eq!(x.builtins.len(), 1);
+        assert_eq!(x.builtins[0].name, "claude-in-chrome");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extras_skip_plugin_symlinks_out_of_the_plugins_dir() {
+        let (_t, home) = extras_home();
+        let cache = home.join(".claude/plugins/cache/official");
+        // The lsp install has no .mcp.json; make it a link to the outside one.
+        std::os::unix::fs::symlink(
+            home.join("elsewhere/.mcp.json"),
+            cache.join("lsp/1.0.0/.mcp.json"),
+        )
+        .unwrap();
+        let x = extras_at(&home);
+        assert!(!x.plugins.iter().any(|p| p.name == "evil"));
+        assert_eq!(x.plugins.len(), 3);
+    }
+
+    #[test]
+    fn extras_of_an_empty_home_are_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(extras_at(tmp.path()), McpExtras::default());
+        // Odd shapes do not fail either.
+        write(
+            &tmp.path().join(".claude.json"),
+            r#"{ "claudeAiMcpEverConnected": "x", "claudeInChromeDefaultEnabled": "yes" }"#,
+        );
+        write(
+            &tmp.path().join(".claude/plugins/installed_plugins.json"),
+            r#"{ "plugins": [] }"#,
+        );
+        assert_eq!(extras_at(tmp.path()), McpExtras::default());
     }
 
     /// Read-only check against the real ~/.claude.json: parse + pretty-print must

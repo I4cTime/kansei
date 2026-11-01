@@ -40,6 +40,25 @@ export type McpServer = {
   config: Record<string, unknown>;
 };
 
+/** mcp_extras result (CONTRACT.md "MCPs"): read-only servers Claude Code also loads. */
+export type McpPluginServer = {
+  plugin: string;
+  marketplace: string | null;
+  version: string | null;
+  scope: string | null;
+  projectPath: string | null;
+  /** enabledPlugins["<plugin>@<marketplace>"] in ~/.claude/settings.json; null when not set. */
+  enabled: boolean | null;
+  name: string;
+  config: Record<string, unknown>;
+  /** The plugin's .mcp.json (always under ~/.claude/plugins). */
+  file: string;
+  needsAuth: boolean;
+};
+export type McpConnector = { name: string; needsAuth: boolean };
+export type McpBuiltin = { name: string; note: string };
+export type McpExtras = { plugins: McpPluginServer[]; connectors: McpConnector[]; builtins: McpBuiltin[] };
+
 /** project_root result (CONTRACT.md "Project scope"). `root` is canonical. */
 export type ProjectInfo = {
   root: string;
@@ -115,6 +134,8 @@ export const files = {
   list: (path: string) => invoke<Entry[]>("fs_list", { path }),
   exists: (path: string) => invoke<boolean>("fs_exists", { path }),
   mkdir: (path: string) => invoke<null>("fs_mkdir", { path }),
+  /** Absolute path to a regular file (symlinks followed) with an execute bit. Stat only, no allowlist. */
+  executable: (path: string) => invoke<boolean>("file_executable", { path }),
 };
 
 export const memory = {
@@ -153,6 +174,8 @@ export const mcp = {
   list: (project?: string) => invoke<McpServer[]>("mcp_list", project ? { project } : {}),
   upsert: (s: McpServer) => invoke<null>("mcp_upsert", s),
   remove: (s: { scope: McpScope; project?: string; name: string }) => invoke<null>("mcp_remove", s),
+  /** Plugin servers, claude.ai connectors and built-ins. Read only. */
+  extras: () => invoke<McpExtras>("mcp_extras"),
 };
 
 /** Decode a base64 pty chunk to bytes for term.write(). */

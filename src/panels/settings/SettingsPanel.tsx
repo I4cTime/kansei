@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAtomValue } from "jotai";
 import { FileText, FolderPlus, X } from "lucide-react";
-import { prefsAtom, savePrefs, type Prefs } from "../../app/prefs";
+import { claudeCommandAtom, prefsAtom, savePrefs, type Prefs } from "../../app/prefs";
 import { refreshProject } from "../../app/project";
 import type { ProjectInfo } from "../../lib/ipc";
 import { Badge, Button, Field, IconButton, Select, TextInput, Toggle, cx } from "../ui";
@@ -234,7 +234,11 @@ function AppSettings() {
   const toast = useToast();
   const [font, setFont] = useState(prefs.fontFamily);
   const [size, setSize] = useState(String(prefs.fontSize));
+  const [claude, setClaude] = useState(prefs.claudeCommand);
+  const resolved = useAtomValue(claudeCommandAtom);
+  const home = usePaths()?.home;
   useEffect(() => setFont(prefs.fontFamily), [prefs.fontFamily]);
+  useEffect(() => setClaude(prefs.claudeCommand), [prefs.claudeCommand]);
   useEffect(() => setSize(String(prefs.fontSize)), [prefs.fontSize]);
 
   const save = (patch: Partial<Prefs>) => {
@@ -247,6 +251,13 @@ function AppSettings() {
       if (n !== prefs.fontSize) save({ fontSize: n });
     } else setSize(String(prefs.fontSize));
   };
+
+  const commitClaude = () => {
+    const c = claude.trim();
+    if (c !== prefs.claudeCommand) save({ claudeCommand: c });
+    else setClaude(c);
+  };
+  const claudeDefault = resolved.local ? `${tildify(resolved.local, home)} (found)` : "claude (PATH)";
 
   const commitFont = () => {
     const f = font.trim();
@@ -263,6 +274,19 @@ function AppSettings() {
             <option value="claude">claude</option>
             <option value="shell">login shell</option>
           </Select>
+        </Field>
+        <Field label="Claude command" hint="Leave empty to use ~/.local/bin/claude when it exists, otherwise claude from PATH.">
+          <TextInput
+            className="font-mono"
+            value={claude}
+            onChange={(e) => setClaude(e.target.value)}
+            onBlur={commitClaude}
+            onKeyDown={(e) => e.key === "Enter" && commitClaude()}
+            placeholder={claudeDefault}
+            title={resolved.source === "pref" ? `Runs ${resolved.command}` : `Runs ${resolved.command} (default)`}
+            spellCheck={false}
+            data-claude-command
+          />
         </Field>
       </div>
       <WorkspaceRoots />

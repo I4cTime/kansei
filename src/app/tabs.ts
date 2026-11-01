@@ -1,12 +1,15 @@
 // Tab store API (atoms re-exported from tabState.ts) and persistence to
 // <appData>/tabs.json: { version: 1, active: number, tabs: { title, cwd, command, args }[] }.
+// Claude tabs keep command "claude" there (never the resolved path), so a later
+// prefs.claudeCommand change applies to restored tabs too.
 import { open } from "@tauri-apps/plugin-dialog";
 import { files, pty } from "../lib/ipc";
-import { prefsAtom } from "./prefs";
+import { CLAUDE, prefsAtom } from "./prefs";
 import { basename, debounce, getPaths, joinPath, store, toastError, uuid } from "./store";
 import { activeKeyAtom, getTab, tabsAtom, tabsRestoredAtom, updateTab, type Tab } from "./tabState";
 import { disposeTerminal, restartTerminal } from "./terminals";
 
+export { CLAUDE } from "./prefs";
 export { activeKeyAtom, activeTabAtom, tabsAtom, tabsRestoredAtom, getTab, type Tab, type TabStatus } from "./tabState";
 
 export type TabSpec = { cwd: string; command?: string; args?: string[]; title?: string };
@@ -21,11 +24,14 @@ function titleFor(cwd: string): string {
 /** What a "shell" tab runs (prefs.newTabCommand = "shell", or a panel's Shell action). */
 export const SHELL_COMMAND = { command: "/bin/bash", args: ["-l"] } as const;
 
-/** Command for a new tab from prefs.newTabCommand. */
+/**
+ * Command for a new tab from prefs.newTabCommand. A Claude tab stores the
+ * logical CLAUDE command; the pty spawn maps it through claudeCommandAtom.
+ */
 export function newTabCommand(): { command: string; args: string[] } {
   return store.get(prefsAtom).newTabCommand === "shell"
     ? { command: SHELL_COMMAND.command, args: [...SHELL_COMMAND.args] }
-    : { command: "claude", args: [] };
+    : { command: CLAUDE, args: [] };
 }
 
 function makeTab(spec: TabSpec): Tab {
@@ -170,7 +176,7 @@ export async function restoreTabs(): Promise<void> {
         toastError(e, "Could not read tabs.json");
       }
     }
-    if (!file) file = { version: 1, active: 0, tabs: [{ title: "", cwd: paths.home, command: "claude", args: [] }] };
+    if (!file) file = { version: 1, active: 0, tabs: [{ title: "", cwd: paths.home, command: CLAUDE, args: [] }] };
     const tabs = file.tabs.map((t) => makeTab({ cwd: t.cwd, command: t.command, args: t.args, title: t.title }));
     store.set(tabsAtom, tabs);
     const active = tabs[Math.min(Math.max(0, file.active), tabs.length - 1)];

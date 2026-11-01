@@ -116,6 +116,33 @@ pub async fn projects_info(paths: Vec<String>) -> Result<Vec<ProjectsInfo>, Stri
     blocking(move || Ok(infos(&paths, home_dir().ok().as_deref()))).await
 }
 
+/// `path` is absolute and names a regular file (symlinks followed) that has an
+/// execute bit set. Stat only, no allowlist; used to find `~/.local/bin/claude`.
+pub fn is_executable_file(path: &str) -> bool {
+    let p = Path::new(path);
+    if !p.is_absolute() {
+        return false;
+    }
+    let Ok(meta) = std::fs::metadata(p) else {
+        return false;
+    };
+    if !meta.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        meta.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    true
+}
+
+#[tauri::command]
+pub async fn file_executable(path: String) -> Result<bool, String> {
+    blocking(move || Ok(is_executable_file(&path))).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -278,5 +305,30 @@ mod tests {
         for key in ["claudeMd", "claudeDir", "mcpJson", "git", "worktree"] {
             assert!(json["flags"].get(key).is_some(), "missing flags.{key}");
         }
+    }
+
+    #[test]
+    fn executable_needs_an_absolute_file_with_an_x_bit() {
+        let (_t, base) = base();
+        let exe = base.join("claude");
+        fs::write(&exe, "#!/bin/sh\n").unwrap();
+        let plain = base.join("plain");
+        fs::write(&plain, "").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
+            fs::set_permissions(&plain, fs::Permissions::from_mode(0o644)).unwrap();
+            assert!(!is_executable_file(&s(&plain)));
+            // A symlink to an executable counts, a dangling one does not.
+            std::os::unix::fs::symlink(&exe, base.join("link")).unwrap();
+            assert!(is_executable_file(&s(&base.join("link"))));
+            std::os::unix::fs::symlink(base.join("gone"), base.join("dangling")).unwrap();
+            assert!(!is_executable_file(&s(&base.join("dangling"))));
+        }
+        assert!(is_executable_file(&s(&exe)));
+        assert!(!is_executable_file(&s(&base)));
+        assert!(!is_executable_file(&s(&base.join("missing"))));
+        assert!(!is_executable_file("claude"));
     }
 }

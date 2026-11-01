@@ -33,6 +33,24 @@ export function summaryOf(config: Record<string, unknown>): string {
   return "";
 }
 
+/** Short transport target for read-only rows: the url's host for http/sse, else the command line. */
+export function targetOf(config: Record<string, unknown>): string {
+  if (typeof config.url === "string") {
+    try {
+      return new URL(config.url).host || config.url;
+    } catch {
+      return config.url;
+    }
+  }
+  return summaryOf(config);
+}
+
+/** Plugin version for a chip: long hex commit ids shortened to 7 characters. */
+export function shortVersion(v: string | null): string | null {
+  if (!v) return null;
+  return /^[0-9a-f]{12,}$/i.test(v) ? v.slice(0, 7) : v;
+}
+
 function recordLines(v: unknown, sep: string): string {
   if (!v || typeof v !== "object" || Array.isArray(v)) return "";
   return Object.entries(v as Record<string, unknown>)

@@ -9,7 +9,7 @@ import { projectAtom, refreshProject } from "./project";
 import * as terminals from "./terminals";
 import * as tabs from "./tabs";
 import { store } from "./store";
-import { prefsAtom, savePrefs, setPrefs } from "./prefs";
+import { claudeCommandAtom, prefsAtom, refreshClaudeCommand, savePrefs, setPrefs, spawnCommand } from "./prefs";
 import { overlayAtom, toastsAtom } from "../lib/overlay";
 import { dismissOverlay } from "./keyboard";
 import * as projectActions from "../panels/projects/actions";
@@ -32,6 +32,8 @@ export function installDriver() {
     prefsAtom,
     savePrefs,
     setPrefs,
+    /** Resolved Claude command (atom), its refresh, and the tab command -> executable mapping used at spawn. */
+    claude: { claudeCommandAtom, refreshClaudeCommand, spawnCommand },
     overlayAtom,
     toastsAtom,
     dismissOverlay,

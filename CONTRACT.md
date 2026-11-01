@@ -85,6 +85,7 @@ Paths are canonicalised after resolving the parent for not-yet-existing files.
 | `fs_list` | `{ path }` | `Entry[]` sorted dirs first then name |
 | `fs_exists` | `{ path }` | `boolean` |
 | `fs_mkdir` | `{ path }` | `null` |
+| `file_executable` | `{ path }` | `boolean`: absolute path to a regular file (symlinks followed) with an execute bit. Stat only, no allowlist (`projects.rs`). |
 
 ### Memory (`src-tauri/src/memory.rs`)
 
@@ -112,6 +113,39 @@ a run copy the file to `~/.claude.json.tsukue-bak`.
 | `mcp_list` | `{}` | `McpServer[]` |
 | `mcp_upsert` | `{ scope: "user" \| "project", project?: string, name, config: object }` | `null` |
 | `mcp_remove` | `{ scope, project?, name }` | `null` |
+| `mcp_extras` | `{}` | `{ plugins: PluginServer[], connectors: Connector[], builtins: Builtin[] }` (read only) |
+
+`mcp_extras` lists what Claude Code loads besides the editable `mcpServers`
+blocks, the way its own `/mcp` screen does. It never writes.
+- `plugins`: `~/.claude/plugins/installed_plugins.json`
+  (`{ version, plugins: { "<name>@<marketplace>": [ { scope, installPath, version, projectPath?, ... } ] } }`),
+  then `<installPath>/.mcp.json` (`{ mcpServers: { name: config } }`) per install,
+  in file order (`preserve_order`). `PluginServer { plugin, marketplace, version,
+  scope, projectPath, enabled, name, config, file, needsAuth }`: `enabled` is
+  `enabledPlugins["<name>@<marketplace>"]` in `~/.claude/settings.json` (null
+  when unset), `file` the `.mcp.json` path, `needsAuth` when `mcpNeedsAuthNoticed`
+  in `~/.claude.json` lists `plugin:<plugin>:<name>`. Installs without a
+  `.mcp.json` are skipped, and so is any install whose `.mcp.json` is not inside
+  `~/.claude/plugins` both as written (absolute, no `..`) and with symlinks
+  resolved: reads never leave `~/.claude/plugins`. A repeated installPath is read once.
+- `connectors`: `claudeAiMcpEverConnected` in `~/.claude.json` (an array of
+  names such as `"claude.ai Claude Docs"`; objects contribute their `name`),
+  deduplicated, `Connector { name, needsAuth }` (`needsAuth` from `mcpNeedsAuthNoticed`).
+- `builtins`: `{ name: "claude-in-chrome", note: "Chrome extension, built into Claude Code" }`
+  when `~/.claude.json` has `claudeInChromeDefaultEnabled: true`.
+- Missing or malformed files give empty lists, not errors.
+
+Panel (`src/panels/mcps/McpPanel.tsx`): below the editable groups (in both the
+User and Project scope views) three collapsible, read-only groups with their
+own counts: "Plugins" (row = server name, transport badge, chip
+`<plugin> <version>` (hex versions cut to 7 characters), the config's `note`
+as subtitle or else the url host / command line, chips "disabled" and "needs
+auth" when they apply, an Open file action that shows the `.mcp.json` in the
+editor sheet read-only), "claude.ai connectors" (subtitle "Managed at
+claude.ai, not editable here"; "None recorded" when the list is empty) and
+"Built-in". The count next to each editable group's header still counts only
+editable servers. The editor sheet gained `readOnly` (no Save, Ctrl+S ignored).
+The files allowlist needed no change: `~/.claude/**` was already readable.
 
 ## Front-end module ownership
 
@@ -131,9 +165,27 @@ a run copy the file to `~/.claude.json.tsukue-bak`.
 - `tabs.json`: `{ version: 1, active: number, tabs: { title, cwd, command, args }[] }`
   saved on every change, restored at launch (each restored tab re-spawns its
   pty). Dead tabs (pty exited) show a "restart" affordance in the terminal area.
-- `prefs.json`: `{ newTabCommand: "claude" | "shell", fontSize: number, fontFamily: string, theme: "system" | "dark" | "light",
+  A Claude tab stores `command: "claude"` (the logical command, never the
+  resolved path); `spawnTab` maps it through the resolved Claude command at
+  every spawn and restart, so a pref change applies to restored tabs too.
+- `prefs.json`: `{ newTabCommand: "claude" | "shell", claudeCommand: string, fontSize: number, fontFamily: string, theme: "system" | "dark" | "light",
   sidebarWidth, sidebarCollapsed, sidebarSection, pinnedProjects: string[], hiddenProjects: string[],
   workspaceRoots: string[], collapsedPaths: string[], expandedPaths: string[] }` (see `src/app/prefs.ts`).
+- `claudeCommand` (default `""`, trimmed): the executable a Claude tab runs.
+  `claudeCommand(prefs, local, home)` in `src/app/prefs.ts` returns the pref
+  when non-empty (a leading `~/` expanded), else `<home>/.local/bin/claude`
+  when `file_executable` says it is executable (the user's launcher, which
+  loads MCP credentials from q-ring before running claude), else `claude` from
+  PATH. The result is cached in `claudeCommandAtom` (`{ command, source:
+  "pref" | "local" | "path", local }`), resolved after prefs load and again
+  whenever `claudeCommand` changes; `spawnCommand(tab.command)` waits for the
+  first resolution. Every Claude spawn (new tab, restored tabs, Sessions
+  Resume, Projects Open, Resume last, Open with) passes the logical `CLAUDE`
+  command and goes through it; other commands (the shell) are passed through.
+  Settings, This app, Tabs: a "Claude command" field under "New tab runs",
+  placeholder = the resolved default (`~/.local/bin/claude (found)` or
+  `claude (PATH)`), saved through `savePrefs` on blur or Enter. Dev driver:
+  `t.claude.{claudeCommandAtom, refreshClaudeCommand, spawnCommand}`.
 - `workspaces.json`: the workspace registry (see "Workspaces").
 
 ## Visual language

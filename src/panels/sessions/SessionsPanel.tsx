@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import { Play, Trash } from "lucide-react";
 import { files, pty, sessions, type Session } from "../../lib/ipc";
-import { activateTab, openTab, tabsAtom } from "../../app/tabs";
+import { CLAUDE, activateTab, openTab, tabsAtom } from "../../app/tabs";
 import { Badge, Button, IconButton, Select } from "../ui";
 import { getPaths, useToast } from "../shared/hooks";
 import { ConfirmBar, EmptyState, Panel, SearchInput, SectionHeader } from "../shared/list";
@@ -129,7 +129,7 @@ export function SessionsPanel() {
   const resume = (s: Session) => {
     if (s.live || !home) return;
     const cwd = s.project ?? home;
-    openTab({ cwd, command: "claude", args: ["--resume", s.id], title: `${projectLabel(cwd, home)} (resumed)` });
+    openTab({ cwd, command: CLAUDE, args: ["--resume", s.id], title: `${projectLabel(cwd, home)} (resumed)` });
   };
 
   const remove = async (s: Session) => {

@@ -2,6 +2,8 @@
 //
 // Shape (Prefs):
 //   newTabCommand:    "claude" | "shell"   what a new tab runs ("shell" = /bin/bash -l)
+//   claudeCommand:    string               executable a "claude" tab runs; "" = ~/.local/bin/claude
+//                                          when it is executable, else claude from PATH (see claudeCommand)
 //   fontSize:         number               terminal font size in px (8..32)
 //   fontFamily:       string               terminal font family (CSS font-family list)
 //   theme:            "system" | "dark" | "light"   sets data-theme on <html>
@@ -29,6 +31,7 @@ export type ThemePref = "system" | "dark" | "light";
 
 export type Prefs = {
   newTabCommand: NewTabCommand;
+  claudeCommand: string;
   fontSize: number;
   fontFamily: string;
   theme: ThemePref;
@@ -49,6 +52,7 @@ export const SIDEBAR_RAIL = 44;
 
 export const DEFAULT_PREFS: Prefs = {
   newTabCommand: "claude",
+  claudeCommand: "",
   fontSize: 13,
   fontFamily: "JetBrainsMono Nerd Font, monospace",
   theme: "system",
@@ -96,6 +100,7 @@ export function sanitizePrefs(raw: unknown): Prefs {
   const d = DEFAULT_PREFS;
   return {
     newTabCommand: r.newTabCommand === "shell" ? "shell" : r.newTabCommand === "claude" ? "claude" : d.newTabCommand,
+    claudeCommand: typeof r.claudeCommand === "string" ? r.claudeCommand.trim() : d.claudeCommand,
     fontSize:
       typeof r.fontSize === "number" && Number.isFinite(r.fontSize)
         ? Math.min(32, Math.max(8, r.fontSize))
@@ -144,6 +149,67 @@ async function defaultWorkspaceRoots(): Promise<string[]> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Claude command
+//
+// Tabs store the logical command "claude" (tabs.json too); terminals.ts maps it
+// through claudeCommandAtom at spawn time, so a pref change also applies to
+// restored and restarted tabs.
+
+/** The logical command a Claude tab stores; resolved at spawn time. */
+export const CLAUDE = "claude";
+
+export type ClaudeSource = "pref" | "local" | "path";
+export type ClaudeResolved = {
+  /** What a "claude" tab actually runs. */
+  command: string;
+  source: ClaudeSource;
+  /** <home>/.local/bin/claude when it is an executable file, else null. */
+  local: string | null;
+};
+
+/** Resolved Claude command; refreshed at startup and whenever prefs.claudeCommand changes. */
+export const claudeCommandAtom = atom<ClaudeResolved>({ command: CLAUDE, source: "path", local: null });
+
+/** Pure resolution: the pref (leading ~ expanded) when set, else `local`, else "claude" from PATH. */
+export function claudeCommand(prefs: Pick<Prefs, "claudeCommand">, local: string | null, home?: string): ClaudeResolved {
+  const pref = prefs.claudeCommand.trim();
+  if (pref) {
+    const command = home && pref === "~" ? home : home && pref.startsWith("~/") ? joinPath(home, pref.slice(2)) : pref;
+    return { command, source: "pref", local };
+  }
+  return local ? { command: local, source: "local", local } : { command: CLAUDE, source: "path", local };
+}
+
+let claudeCheck: Promise<void> | null = null;
+let claudeSeq = 0;
+
+/** Re-check <home>/.local/bin/claude and update claudeCommandAtom. */
+export function refreshClaudeCommand(): Promise<void> {
+  const seq = ++claudeSeq;
+  const run = (async () => {
+    let local: string | null = null;
+    let home: string | undefined;
+    try {
+      home = (await getPaths()).home;
+      const candidate = joinPath(home, ".local/bin/claude");
+      if (await files.executable(candidate)) local = candidate;
+    } catch {
+      // Treat as not found: claude from PATH.
+    }
+    if (seq === claudeSeq) store.set(claudeCommandAtom, claudeCommand(store.get(prefsAtom), local, home));
+  })();
+  claudeCheck = run;
+  return run;
+}
+
+/** The executable for a tab command: "claude" maps through claudeCommandAtom, anything else is kept. */
+export async function spawnCommand(command: string): Promise<string> {
+  if (command !== CLAUDE) return command;
+  await (claudeCheck ?? refreshClaudeCommand());
+  return store.get(claudeCommandAtom).command;
+}
+
 let loadStarted = false;
 export async function loadPrefs(): Promise<void> {
   if (loadStarted) return;
@@ -165,6 +231,14 @@ export async function loadPrefs(): Promise<void> {
     toastError(e, "Could not read prefs.json");
   } finally {
     store.set(prefsLoadedAtom, true);
+    void refreshClaudeCommand();
+    let lastClaude = store.get(prefsAtom).claudeCommand;
+    store.sub(prefsAtom, () => {
+      const next = store.get(prefsAtom).claudeCommand;
+      if (next === lastClaude) return;
+      lastClaude = next;
+      void refreshClaudeCommand();
+    });
     const persist = debounce((p: Prefs) => {
       writePrefs(p).catch((e) => toastError(e, "Could not save prefs.json"));
     }, 400);

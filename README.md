@@ -37,6 +37,14 @@ next run stops only that group (plus whatever holds the Vite port 1420), never
 processes by name, so an installed `tsukue` keeps running. `drive.py --shot`
 prefers the dev window (`target/debug/tsukue`) when both are open.
 
+Claude tabs run `~/.local/bin/claude` when that file is executable (a launcher
+that can load MCP credentials before starting claude), otherwise `claude` from
+PATH; set Settings, This app, "Claude command" to use something else.
+
+The MCPs panel also lists, read only, the servers Claude Code loads from
+installed plugins (`~/.claude/plugins`), the claude.ai connectors and the
+built-in Chrome server, below the editable ones.
+
 `TSUKUE_DATA_DIR=/some/dir` runs an instance with its own tabs.json and
 prefs.json (useful for trying the release binary while a dev instance runs).
 

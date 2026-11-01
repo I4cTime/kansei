@@ -21,6 +21,8 @@ export type OpenEditorOptions = {
   onSaved?: (content: string) => void;
   /** Short muted note shown under the header (reminders, warnings). */
   note?: ReactNode;
+  /** View only: no Save button, Ctrl+S does nothing, the text cannot change. */
+  readOnly?: boolean;
 };
 
 type Ctl = { escape: () => boolean; dirty: () => boolean };
@@ -92,7 +94,7 @@ function EditorSheet({ opts, ctl, close }: { opts: OpenEditorOptions; ctl: Ctl; 
   const [saving, setSaving] = useState(false);
 
   const lang = opts.lang ?? langForPath(opts.path);
-  const dirty = initial !== null && (isNew || text !== baseline);
+  const dirty = !opts.readOnly && initial !== null && (isNew || text !== baseline);
 
   useEffect(() => {
     getPaths().then((p) => setHome(p.home), () => {});
@@ -123,7 +125,7 @@ function EditorSheet({ opts, ctl, close }: { opts: OpenEditorOptions; ctl: Ctl; 
 
   const doSave = useCallback(
     async (force = false) => {
-      if (saving) return;
+      if (saving || opts.readOnly) return;
       if (lang === "json" && !force) {
         try {
           JSON.parse(text);
@@ -197,15 +199,18 @@ function EditorSheet({ opts, ctl, close }: { opts: OpenEditorOptions; ctl: Ctl; 
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-sm font-medium text-fg">{opts.title ?? basename(opts.path)}</span>
             {isNew && <Badge tone="accent">new file</Badge>}
+            {opts.readOnly && <Badge>read only</Badge>}
             {dirty && !isNew && <Badge tone="warn">unsaved</Badge>}
           </div>
           <div className="truncate font-mono text-[11px] text-fg-muted" title={opts.path}>
             {shown}
           </div>
         </div>
-        <Button variant="primary" icon={Save} onClick={() => void doSave()} disabled={!dirty || saving || initial === null} title="Save (Ctrl+S)">
-          Save
-        </Button>
+        {!opts.readOnly && (
+          <Button variant="primary" icon={Save} onClick={() => void doSave()} disabled={!dirty || saving || initial === null} title="Save (Ctrl+S)">
+            Save
+          </Button>
+        )}
         <IconButton icon={X} title="Close (Esc)" onClick={requestClose} />
       </div>
 
@@ -243,7 +248,7 @@ function EditorSheet({ opts, ctl, close }: { opts: OpenEditorOptions; ctl: Ctl; 
         ) : initial === null ? (
           <div className="p-4 text-xs text-fg-muted">Loading...</div>
         ) : (
-          <CodeEditor value={initial} lang={lang} wrap={lang === "markdown"} onChange={setText} autoFocus />
+          <CodeEditor value={initial} lang={lang} wrap={lang === "markdown"} onChange={setText} readOnly={opts.readOnly} autoFocus />
         )}
       </div>
     </div>

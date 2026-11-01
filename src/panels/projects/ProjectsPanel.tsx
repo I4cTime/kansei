@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, Eye, EyeOff, FolderPlus, History, Layers, Li
 import { memory, projects, sessions, type MemoryProject, type ProjectsInfo, type Session, type WorkspaceNode } from "../../lib/ipc";
 import { prefsAtom, setPrefs } from "../../app/prefs";
 import { projectAtom } from "../../app/project";
-import { SHELL_COMMAND, activeTabAtom, openTab } from "../../app/tabs";
+import { CLAUDE, SHELL_COMMAND, activeTabAtom, openTab } from "../../app/tabs";
 import { store } from "../../app/store";
 import { Badge, Button, IconButton, Select, cx } from "../ui";
 import { getPaths, useToast } from "../shared/hooks";
@@ -249,7 +249,7 @@ export function ProjectsPanel() {
           confirmLabel="Open"
           note="Related projects start checked. The new tab runs claude even when new tabs default to a shell."
           onConfirm={(paths) => {
-            openTab({ cwd: r.path, command: "claude", args: paths.flatMap((p) => ["--add-dir", p]), title: label });
+            openTab({ cwd: r.path, command: CLAUDE, args: paths.flatMap((p) => ["--add-dir", p]), title: label });
           }}
           close={close}
         />
@@ -257,7 +257,7 @@ export function ProjectsPanel() {
     },
     resume: (r, m) => {
       if (!r.exists || !r.lastSessionId) return;
-      openTab({ cwd: r.path, command: "claude", args: ["--resume", r.lastSessionId], title: `${labelFor(r, m)} (resumed)` });
+      openTab({ cwd: r.path, command: CLAUDE, args: ["--resume", r.lastSessionId], title: `${labelFor(r, m)} (resumed)` });
     },
     sessions: (r) => {
       if (!r.sessionsKey) return;
