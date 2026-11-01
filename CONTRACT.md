@@ -170,6 +170,15 @@ for the terminal (Omarchy ships it).
   SIGKILL after 3 s. Env drops `CLAUDECODE` and `CLAUDE_CODE_ENTRYPOINT` so a
   tab's `claude` does not think it is nested; AppImage library variables are
   stripped.
+- Watchdog (`src-tauri/src/watchdog.rs`): a thread posts a ping to the main
+  thread every 500 ms (`run_on_main_thread`, one in flight at most). No pong for
+  over 3 s logs `stall start after <ms> ms without pong` and runs
+  `eu-stack -p <own pid>` once (10 s timeout, `PR_SET_PTRACER_ANY` only while it
+  runs, at most 5 per process) into `<appData>/stalls/<unix ts>.txt`; the next
+  pong logs `stall end, lasted <ms> ms`. `watchdog::note` appends UTC-stamped
+  lines to `<appData>/tsukue.log` (rotated to `.1` past 1 MB): startup env, pty
+  spawn/exit/spawn failure, exit. Debug builds register `debug_block_main(ms)`,
+  which sleeps on the main thread to test it.
 - Known gaps: CSP is still null; MCP `env` values reach the webview (masked in
   the UI behind an eye toggle); a running `claude` can rewrite `~/.claude.json`
   over an MCP edit, so restart sessions after editing MCPs.

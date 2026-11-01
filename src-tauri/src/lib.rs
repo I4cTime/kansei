@@ -4,6 +4,7 @@ mod memory;
 mod projects;
 mod pty;
 mod sessions;
+mod watchdog;
 mod workspace;
 
 use tauri::{Manager, RunEvent};
@@ -19,10 +20,13 @@ pub fn run() {
         .manage(driver::DriverState::default())
         .setup(|app| {
             driver::start(app.handle());
+            watchdog::start(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             driver::driver_result,
+            #[cfg(debug_assertions)]
+            watchdog::debug_block_main,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
@@ -50,6 +54,7 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| {
             if let RunEvent::Exit = event {
+                watchdog::note("exit");
                 app.state::<pty::PtyState>().kill_all();
             }
         });

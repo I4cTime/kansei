@@ -74,6 +74,36 @@ pnpm from mise are not pacman packages, so `makepkg -si` would try to install
 the repo `nodejs` and `pnpm`; to build with the mise ones instead, use
 `makepkg -f --nodeps` and then `sudo pacman -U tsukue-*.pkg.tar.zst`.
 
+## Diagnosing a hang
+
+A watchdog thread pings the GTK main thread every 500 ms. If no answer comes
+back for more than 3 s it writes `stall start ...` to the log and captures every
+thread's stack once with `eu-stack` (elfutils), then `stall end, lasted ... ms`
+when the main thread answers again. At most 5 captures per run.
+
+- Log: `<appData>/tsukue.log` (`~/.local/share/tsukue/tsukue.log`, or under
+  `TSUKUE_DATA_DIR`), rotated to `tsukue.log.1` past 1 MB. It also records
+  startup (version, pid, `__NV_DISABLE_EXPLICIT_SYNC`, `GDK_BACKEND`), pty
+  spawns and exits, and app exit. Times are UTC (no offset is written).
+- Stacks: `<appData>/stalls/<unix ts>.txt`. Rust names are mangled;
+  `c++filt < ~/.local/share/tsukue/stalls/<ts>.txt` demangles them.
+
+The package keeps the symbol table (`options=('!strip')` plus
+`CARGO_PROFILE_RELEASE_STRIP=false` in the PKGBUILD) so Rust frames are
+named; that makes `/usr/bin/tsukue` about 11 MB instead of 7 MB.
+
+If the app is stuck and the watchdog did not fire (no new file in `stalls/`),
+choose Wait in the "Application Not Responding" dialog and, in a terminal:
+
+```sh
+sudo eu-stack -p $(pgrep -x tsukue)
+# more detail if needed:
+sudo gdb -p <pid> -batch -ex "thread apply all bt"
+```
+
+Debug builds also have a `debug_block_main` command to force a stall:
+`./drive.py 't.invoke("debug_block_main", {ms: 5000}); return 1'`.
+
 ## Checks
 
 ```sh

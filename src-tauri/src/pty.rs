@@ -209,8 +209,11 @@ pub enum PtyEvent<'a> {
     Exit { id: &'a str, code: Option<i64> },
 }
 
+// The pty commands are async so they run on the runtime's worker threads, never
+// on the GTK main thread (a sync Tauri command runs there): fork/exec, ioctls
+// and terminate() must not be able to stall the window.
 #[tauri::command]
-pub fn pty_spawn(
+pub async fn pty_spawn(
     app: AppHandle,
     state: State<'_, PtyState>,
     cwd: String,
@@ -220,15 +223,26 @@ pub fn pty_spawn(
     rows: u16,
 ) -> Result<SpawnResult, String> {
     let root = std::path::PathBuf::from(&cwd);
-    let id = spawn(&state, cwd, command, args, cols, rows, move |ev| {
+    let what = format!("cwd {cwd} command {command} {}", args.join(" "))
+        .trim_end()
+        .to_string();
+    let spawned = spawn(&state, cwd, command, args, cols, rows, move |ev| {
         let _ = match ev {
             PtyEvent::Data { id, data } => app.emit("pty:data", DataEvent { id, data }),
-            PtyEvent::Exit { id, code } => app.emit("pty:exit", ExitEvent { id, code }),
+            PtyEvent::Exit { id, code } => {
+                let code_s = code.map_or("none".into(), |c| c.to_string());
+                crate::watchdog::note(&format!("pty exit id {id} code {code_s}"));
+                app.emit("pty:exit", ExitEvent { id, code })
+            }
         };
-    })?;
+    });
+    let id = spawned
+        .inspect_err(|e| crate::watchdog::note(&format!("pty spawn failed, {what}: {e}")))?;
     // Project scope: files below a tab's cwd become reachable (CONTRACT.md).
     crate::files::register_project_root(&root);
     let pid = state.lock().get(&id).and_then(|h| h.pid);
+    let pid_s = pid.map_or("none".into(), |p| p.to_string());
+    crate::watchdog::note(&format!("pty spawn id {id} pid {pid_s} {what}"));
     Ok(SpawnResult { id, pid })
 }
 
@@ -390,7 +404,7 @@ where
 }
 
 #[tauri::command]
-pub fn pty_write(state: State<'_, PtyState>, id: String, data: String) -> Result<(), String> {
+pub async fn pty_write(state: State<'_, PtyState>, id: String, data: String) -> Result<(), String> {
     let map = state.lock();
     let handle = map.get(&id).ok_or_else(|| format!("pty not found: {id}"))?;
     if !handle.alive.load(Ordering::SeqCst) {
@@ -403,7 +417,7 @@ pub fn pty_write(state: State<'_, PtyState>, id: String, data: String) -> Result
 }
 
 #[tauri::command]
-pub fn pty_resize(
+pub async fn pty_resize(
     state: State<'_, PtyState>,
     id: String,
     cols: u16,
@@ -418,7 +432,7 @@ pub fn pty_resize(
 }
 
 #[tauri::command]
-pub fn pty_kill(state: State<'_, PtyState>, id: String) -> Result<(), String> {
+pub async fn pty_kill(state: State<'_, PtyState>, id: String) -> Result<(), String> {
     let handle = state
         .lock()
         .remove(&id)
@@ -428,8 +442,8 @@ pub fn pty_kill(state: State<'_, PtyState>, id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn pty_list(state: State<'_, PtyState>) -> Vec<PtyInfo> {
-    pty_list_inner(&state)
+pub async fn pty_list(state: State<'_, PtyState>) -> Result<Vec<PtyInfo>, String> {
+    Ok(pty_list_inner(&state))
 }
 
 fn pty_list_inner(state: &PtyState) -> Vec<PtyInfo> {

@@ -1,7 +1,7 @@
 # Maintainer: I4C Studio <i4c.studio.dev@gmail.com>
 
 pkgname=tsukue
-pkgver=0.1.0.r22.gf3fa29d
+pkgver=0.1.0.r23.ga1734aa
 pkgrel=1
 pkgdesc='Claude Code cockpit: terminal tabs plus a sidebar that edits Claude memory, MCP servers, agents, skills, hooks and settings'
 arch=('x86_64')
@@ -22,9 +22,10 @@ depends=(
 )
 makedepends=('cargo' 'nodejs' 'pnpm' 'git')
 optdepends=('claude-code: the CLI the terminal tabs run')
-# Cargo's release profile already strips the binary, so a debug package
-# would be empty.
-options=('!debug')
+# Keep the symbol table so stacks the watchdog captures (eu-stack) name the
+# Rust frames: makepkg must not strip, and build() turns off Cargo's own
+# release-profile strip. No separate debug package.
+options=('!debug' '!strip')
 # Local build from the committed checkout. A release PKGBUILD would use the
 # GitHub tarball instead, e.g.
 #   source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
@@ -53,6 +54,8 @@ build() {
   cd "$pkgname"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR="$srcdir/$pkgname/src-tauri/target"
+  # Cargo.toml's release profile has strip = true; keep symbols in the package.
+  export CARGO_PROFILE_RELEASE_STRIP=false
   # Runs beforeBuildCommand (pnpm build) for the frontend, then a cargo
   # release build. No deb/rpm/AppImage bundles.
   pnpm tauri build --no-bundle -- --frozen
