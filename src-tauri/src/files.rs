@@ -1222,7 +1222,7 @@ mod tests {
         // Both exist: only files newer than their namesake come over, logs never.
         fs::create_dir(&old).unwrap();
         fs::write(old.join("prefs.json"), "old-only").unwrap();
-        fs::write(old.join("tsukue.log"), "log").unwrap();
+        fs::write(old.join("tsukue.log"), "log2").unwrap();
         fs::write(old.join("tabs.json"), "v2").unwrap();
         let past = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
         fs::File::open(new.join("tabs.json")).unwrap().set_modified(past).unwrap();
@@ -1234,6 +1234,6 @@ mod tests {
         assert_eq!(fs::read_to_string(new.join("tabs.json")).unwrap(), "v2");
         assert_eq!(fs::read_to_string(new.join("prefs.json")).unwrap(), "old-only");
         assert_eq!(fs::read_to_string(new.join("board.json")).unwrap(), "fresh");
-        assert!(!new.join("tsukue.log").exists());
+        assert_eq!(fs::read_to_string(new.join("tsukue.log")).unwrap(), "log", "logs are never merged");
     }
 }
