@@ -402,7 +402,7 @@ Panel:
 ## Workspaces (added 2026-10-31)
 
 Projects live in groups under workspace roots (`~/Develop/{products,sites,lab,...}`),
-some one level deeper in a wrapper folder (`products/mine/mineui`), some as apps
+some one level deeper in a wrapper folder (`products/mineui`), some as apps
 of a monorepo (`sites/i4c-sites/apps/sparkle`). The Projects panel shows this as
 a tree, every node opens as its own Claude project, and each root gets a
 generated `PROJECTS.md` that a root `CLAUDE.md` imports, so every session under
@@ -505,7 +505,7 @@ the file is left alone.
 
   ## products
   - aibou - `products/aibou` - live - Pet care app (Next + Capacitor). Related: niwa, i4c-sites
-  - mineui - `products/mine/mineui`
+  - mineui - `products/mineui`
   ...
 
   ## sites

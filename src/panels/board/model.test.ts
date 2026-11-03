@@ -15,8 +15,8 @@ const tree: WorkspaceNode[] = [
   node("/d", "root", [
     node("/d/products", "group", [
       node("/d/products/aibou", "project"),
-      node("/d/products/cryo", "group", [node("/d/products/cryo/cryo", "project")]),
-      node("/d/products/ring", "group", [node("/d/products/ring/q-ring", "project")]),
+      node("/d/products/cryo", "group", [node("/d/products/cryo", "project")]),
+      node("/d/products/ring", "group", [node("/d/products/q-ring", "project")]),
     ]),
     node("/d/sites", "group", [node("/d/sites/i4c-sites", "project", [node("/d/sites/i4c-sites/apps/cryo", "subproject"), node("/d/sites/i4c-sites/apps/Tanko", "subproject")])]),
     node("/d/lab", "group", [node("/d/lab/Tsukue", "project")]),
@@ -27,13 +27,13 @@ describe("areaProject", () => {
   it("matches the basename case-insensitively, projects before subprojects", () => {
     expect(areaProject("aibou", tree, {})).toBe("/d/products/aibou");
     expect(areaProject("tsukue", tree, {})).toBe("/d/lab/Tsukue");
-    expect(areaProject("Q-Ring", tree, {})).toBe("/d/products/ring/q-ring");
-    expect(areaProject("cryo", tree, {})).toBe("/d/products/cryo/cryo");
+    expect(areaProject("Q-Ring", tree, {})).toBe("/d/products/q-ring");
+    expect(areaProject("cryo", tree, {})).toBe("/d/products/cryo");
     expect(areaProject("tanko", tree, {})).toBe("/d/sites/i4c-sites/apps/Tanko");
   });
 
   it("falls back to a registry entry, then null", () => {
-    const registry = { "/d": { "/d/products/lookout/mcp-lookout": { description: "x", status: null, related: [] }, "/d/games/deathbell": { description: "", status: "parked" as const, related: [] } } };
+    const registry = { "/d": { "/d/products/mcp-lookout": { description: "x", status: null, related: [] }, "/d/games/deathbell": { description: "", status: "parked" as const, related: [] } } };
     expect(areaProject("deathbell", tree, registry)).toBe("/d/games/deathbell");
     expect(areaProject("sites", tree, registry)).toBeNull();
     expect(areaProject("lookout", tree, registry)).toBeNull();
@@ -104,7 +104,7 @@ describe("board helpers", () => {
     expect(isOverdue(item({ scheduled: "2026-11-01" }), "2026-11-01")).toBe(false);
     expect(itemProject(epic, tree, {})).toBe("/d/products/aibou");
     expect(itemProject(t3, tree, {})).toBeNull();
-    expect(itemProject(item({ repo: "I4cTime/q-ring" }), tree, {})).toBe("/d/products/ring/q-ring");
+    expect(itemProject(item({ repo: "I4cTime/q-ring" }), tree, {})).toBe("/d/products/q-ring");
   });
 
   it("patches and replaces items for optimistic writes", () => {

@@ -56,7 +56,7 @@ prefs.json (useful for trying the release binary while a dev instance runs).
 The Projects panel shows every workspace root (default `~/Develop`, edit the list
 in Settings, This app, Projects) as a tree: projects directly under the root
 (a top-level folder that is a repo itself, like `marketing`), groups, projects (also inside
-wrapper folders like `products/mine/mineui`) and monorepo apps and packages as
+wrapper folders like `products/mineui`) and monorepo apps and packages as
 subprojects. Each can be opened as its own Claude project, opened with related
 projects (`claude --add-dir ...`), described (Edit) and linked (Related...).
 
