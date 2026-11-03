@@ -7,8 +7,8 @@
 //! once into `<appData>/stalls/<unix ts>.txt` (at most 5 captures per
 //! process). When pongs resume the log gets `stall end, lasted ...`.
 //!
-//! Log: `<appData>/tsukue.log`, append-only, one `<UTC time> <message>` line
-//! per entry, rotated to `tsukue.log.1` past 1 MB. `note` is the public entry.
+//! Log: `<appData>/kansei.log`, append-only, one `<UTC time> <message>` line
+//! per entry, rotated to `kansei.log.1` past 1 MB. `note` is the public entry.
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -26,7 +26,7 @@ const STALL_AFTER_MS: u64 = 3000;
 const MAX_CAPTURES: u32 = 5;
 /// eu-stack is killed if it has not finished by then.
 const CAPTURE_TIMEOUT: Duration = Duration::from_secs(10);
-/// The log rotates to `tsukue.log.1` once it is larger than this.
+/// The log rotates to `kansei.log.1` once it is larger than this.
 const LOG_MAX_BYTES: u64 = 1024 * 1024;
 
 /// Serialises appends (and the rotation check) across threads.
@@ -36,7 +36,7 @@ fn data_dir() -> Option<PathBuf> {
     crate::files::app_data_dir().ok()
 }
 
-/// Append one line to `<appData>/tsukue.log`. Newlines in `msg` become spaces
+/// Append one line to `<appData>/kansei.log`. Newlines in `msg` become spaces
 /// so every entry stays on one line. Failures go to stderr and are otherwise
 /// ignored: logging must never break the caller.
 pub fn note(msg: &str) {
@@ -48,9 +48,9 @@ pub fn note(msg: &str) {
     );
     let _guard = LOG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let res = fs::create_dir_all(&dir)
-        .and_then(|_| append_line(&dir.join("tsukue.log"), &line, LOG_MAX_BYTES));
+        .and_then(|_| append_line(&dir.join("kansei.log"), &line, LOG_MAX_BYTES));
     if let Err(e) = res {
-        eprintln!("tsukue log: {e}");
+        eprintln!("kansei log: {e}");
     }
 }
 
@@ -158,7 +158,7 @@ impl Detector {
 pub fn start(app: &tauri::AppHandle) {
     let env = |k: &str| std::env::var(k).unwrap_or_else(|_| "unset".into());
     note(&format!(
-        "start tsukue {} ({}) pid {}, nvidia driver {}, __NV_DISABLE_EXPLICIT_SYNC={}, \
+        "start kansei {} ({}) pid {}, nvidia driver {}, __NV_DISABLE_EXPLICIT_SYNC={}, \
          __GL_SYNC_TO_VBLANK={}, WEBKIT_DISABLE_DMABUF_RENDERER={}, GDK_BACKEND={}",
         env!("CARGO_PKG_VERSION"),
         if cfg!(debug_assertions) {
@@ -331,8 +331,8 @@ mod tests {
     #[test]
     fn append_rotates_past_the_limit() {
         let dir = tempfile::tempdir().unwrap();
-        let log = dir.path().join("tsukue.log");
-        let old = dir.path().join("tsukue.log.1");
+        let log = dir.path().join("kansei.log");
+        let old = dir.path().join("kansei.log.1");
         fs::write(&old, "ancient\n").unwrap();
 
         append_line(&log, "one", 10).unwrap();

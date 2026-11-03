@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Tsukue
+Name=Kansei
 Comment=Claude Code cockpit
-Exec=tsukue
-Icon=tsukue
+Exec=kansei
+Icon=kansei
 Terminal=false
 Categories=Development;
-StartupWMClass=tsukue
+StartupWMClass=kansei

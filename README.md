@@ -1,6 +1,6 @@
-# Tsukue
+# Kansei
 
-A personal Claude Code cockpit for Omarchy. One window: a left sidebar that
+A personal Claude Code cockpit for Omarchy (formerly Tsukue). One window: a left sidebar that
 edits everything Claude Code reads (memory, rules, MCP servers, agents, skills,
 workflows, hooks, settings) and shows the work plan (the I4C board and a
 calendar), a top rail of terminal tabs, and a terminal filling the rest, each
@@ -13,32 +13,32 @@ portable-pty. Design of record: `CONTRACT.md`.
 
 ```sh
 pnpm install
-./run-dev.sh          # detached dev build, log in /tmp/tsukue-dev.log
+./run-dev.sh          # detached dev build, log in /tmp/kansei-dev.log
 pnpm tauri build      # release bundle (deb, rpm, AppImage)
 ```
 
 On a machine with the NVIDIA driver the binary sets two driver variables for
 itself before GTK starts (main.rs), overriding the session (a gaming profile
 in ~/.config/environment.d exports `__GL_SYNC_TO_VBLANK=1`; set
-`TSUKUE_NVIDIA_ENV=keep` to opt out):
+`KANSEI_NVIDIA_ENV=keep` to opt out):
 `__NV_DISABLE_EXPLICIT_SYNC=1`, because NVIDIA explicit sync makes WebKitGTK's
 DMA-BUF renderer die with "Missing acquire timeline" (the software fallback
 `WEBKIT_DISABLE_DMABUF_RENDERER=1` works too but types with visible lag), and
 `__GL_SYNC_TO_VBLANK=0`, because otherwise a repaint while the window sits on a
 hidden Hyprland workspace blocks the main thread in eglSwapBuffers until the
 workspace is shown again ("Application Not Responding"). `run-dev.sh` sets
-`TSUKUE_DRIVER=/tmp/tsukue-driver.sock`, a debug-only socket that runs
+`KANSEI_DRIVER=/tmp/kansei-driver.sock`, a debug-only socket that runs
 JavaScript inside the webview for UI checks:
 
 ```sh
 ./drive.py 'return t.store.get(t.tabs.tabsAtom).map(x => x.title)'
-./drive.py --shot /tmp/tsukue.png
+./drive.py --shot /tmp/kansei.png
 ```
 
-`run-dev.sh` records the dev process group in `/tmp/tsukue-dev.pid` and on the
+`run-dev.sh` records the dev process group in `/tmp/kansei-dev.pid` and on the
 next run stops only that group (plus whatever holds the Vite port 1420), never
-processes by name, so an installed `tsukue` keeps running. `drive.py --shot`
-prefers the dev window (`target/debug/tsukue`) when both are open.
+processes by name, so an installed `kansei` keeps running. `drive.py --shot`
+prefers the dev window (`target/debug/kansei`) when both are open.
 
 Claude tabs run `~/.local/bin/claude` when that file is executable (a launcher
 that can load MCP credentials before starting claude), otherwise `claude` from
@@ -48,7 +48,7 @@ The MCPs panel also lists, read only, the servers Claude Code loads from
 installed plugins (`~/.claude/plugins`), the claude.ai connectors and the
 built-in Chrome server, below the editable ones.
 
-`TSUKUE_DATA_DIR=/some/dir` runs an instance with its own tabs.json and
+`KANSEI_DATA_DIR=/some/dir` runs an instance with its own tabs.json and
 prefs.json (useful for trying the release binary while a dev instance runs).
 
 ## Projects and workspaces
@@ -61,7 +61,7 @@ subprojects. Each can be opened as its own Claude project, opened with related
 projects (`claude --add-dir ...`), described (Edit) and linked (Related...).
 
 Descriptions, status and relations live in `<appData>/workspaces.json`. From
-them Tsukue keeps `<root>/PROJECTS.md` up to date (it is overwritten; edit in
+them Kansei keeps `<root>/PROJECTS.md` up to date (it is overwritten; edit in
 the panel) and, the first time it sees a root, creates `<root>/CLAUDE.md`
 importing `@PROJECTS.md` (or appends the import once to an existing one), so
 every Claude session under the root knows the sibling projects. Related...
@@ -95,7 +95,7 @@ a Task) and New epic.
 All GitHub traffic goes through the `gh` CLI, run off the main thread and
 always without `GITHUB_TOKEN` in its environment (a Claude session's token is
 read only; the keyring login needs the `project` scope:
-`gh auth refresh -s project`). Tsukue keeps only a cache in
+`gh auth refresh -s project`). Kansei keeps only a cache in
 `<appData>/board.json`; the board on GitHub is the source of truth. Lane moves
 and dates change the panel right away and roll back with a toast when GitHub
 refuses. When `gh` is missing or logged out the panels show the cached board
@@ -115,7 +115,7 @@ Click a day for the Day sheet (area, note, the day's tasks with unschedule, and
 a day or from the Unscheduled list of Ready and In progress tasks without a
 date) onto another day to set its date.
 
-Tsukue writes `SCHEDULE.md` into the first workspace root (`~/Develop`) at
+Kansei writes `SCHEDULE.md` into the first workspace root (`~/Develop`) at
 startup, after every board fetch, task date change and schedule change: today,
 this week, the next 30 days, the weekly rhythm and the unscheduled tasks. The
 first time, it appends `Schedule: @SCHEDULE.md` to that root's `CLAUDE.md`
@@ -133,10 +133,10 @@ uncommitted edits), so commit first:
 cd packaging/arch && makepkg -si
 ```
 
-That installs `/usr/bin/tsukue`, a desktop entry and hicolor icons. Node and
+That installs `/usr/bin/kansei`, a desktop entry and hicolor icons. Node and
 pnpm from mise are not pacman packages, so `makepkg -si` would try to install
 the repo `nodejs` and `pnpm`; to build with the mise ones instead, use
-`makepkg -f --nodeps` and then `sudo pacman -U tsukue-*.pkg.tar.zst`.
+`makepkg -f --nodeps` and then `sudo pacman -U kansei-*.pkg.tar.zst`.
 
 ## Diagnosing a hang
 
@@ -145,22 +145,22 @@ back for more than 3 s it writes `stall start ...` to the log and captures every
 thread's stack once with `eu-stack` (elfutils), then `stall end, lasted ... ms`
 when the main thread answers again. At most 5 captures per run.
 
-- Log: `<appData>/tsukue.log` (`~/.local/share/tsukue/tsukue.log`, or under
-  `TSUKUE_DATA_DIR`), rotated to `tsukue.log.1` past 1 MB. It also records
+- Log: `<appData>/kansei.log` (`~/.local/share/kansei/kansei.log`, or under
+  `KANSEI_DATA_DIR`), rotated to `kansei.log.1` past 1 MB. It also records
   startup (version, pid, `__NV_DISABLE_EXPLICIT_SYNC`, `GDK_BACKEND`), pty
   spawns and exits, and app exit. Times are UTC (no offset is written).
 - Stacks: `<appData>/stalls/<unix ts>.txt`. Rust names are mangled;
-  `c++filt < ~/.local/share/tsukue/stalls/<ts>.txt` demangles them.
+  `c++filt < ~/.local/share/kansei/stalls/<ts>.txt` demangles them.
 
 The package keeps the symbol table (`options=('!strip')` plus
 `CARGO_PROFILE_RELEASE_STRIP=false` in the PKGBUILD) so Rust frames are
-named; that makes `/usr/bin/tsukue` about 11 MB instead of 7 MB.
+named; that makes `/usr/bin/kansei` about 11 MB instead of 7 MB.
 
 If the app is stuck and the watchdog did not fire (no new file in `stalls/`),
 choose Wait in the "Application Not Responding" dialog and, in a terminal:
 
 ```sh
-sudo eu-stack -p $(pgrep -x tsukue)
+sudo eu-stack -p $(pgrep -x kansei)
 # more detail if needed:
 sudo gdb -p <pid> -batch -ex "thread apply all bt"
 ```

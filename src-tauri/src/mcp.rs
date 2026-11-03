@@ -3,7 +3,7 @@
 //! Read-modify-write with `serde_json::Value` (`preserve_order`), touching only
 //! the top-level `mcpServers` (scope "user") and `projects.<path>.mcpServers`
 //! (scope "project"). The first write of a run copies the file to
-//! `~/.claude.json.tsukue-bak`. All logic takes a path so tests use temp files.
+//! `~/.claude.json.kansei-bak`. All logic takes a path so tests use temp files.
 //!
 //! Scope "projectFile" (CONTRACT.md "Project scope") lives in `<root>/.mcp.json`
 //! as `{ "mcpServers": { name: config } }`; the path goes through the files
@@ -30,11 +30,11 @@ pub fn with_claude_json_lock<T>(f: impl FnOnce() -> Result<T, String>) -> Result
 
 fn backup_path(path: &Path) -> PathBuf {
     let mut s = path.as_os_str().to_os_string();
-    s.push(".tsukue-bak");
+    s.push(".kansei-bak");
     PathBuf::from(s)
 }
 
-/// Copy `path` to `<path>.tsukue-bak` once per `flag` (once per process for the real file).
+/// Copy `path` to `<path>.kansei-bak` once per `flag` (once per process for the real file).
 pub fn backup_once(path: &Path, flag: &OnceLock<()>) -> Result<(), String> {
     if flag.get().is_some() {
         return Ok(());

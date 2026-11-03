@@ -1,5 +1,5 @@
 // Dev-only UI driver hook. src-tauri/src/driver.rs evals
-// window.__tsukueDriverRun(id, code) for each line sent to the TSUKUE_DRIVER
+// window.__kanseiDriverRun(id, code) for each line sent to the KANSEI_DRIVER
 // socket; the code runs as an async function body with `t` bound to the
 // helpers below and the JSON result is handed back through driver_result.
 import { invoke } from "@tauri-apps/api/core";
@@ -23,8 +23,8 @@ import * as calendarActions from "../panels/calendar/actions";
 
 declare global {
   interface Window {
-    __tsukue?: Record<string, unknown>;
-    __tsukueDriverRun?: (id: number, code: string) => Promise<void>;
+    __kansei?: Record<string, unknown>;
+    __kanseiDriverRun?: (id: number, code: string) => Promise<void>;
   }
 }
 
@@ -74,8 +74,8 @@ export function installDriver() {
     text: (sel = "#root") => document.querySelector(sel)?.textContent ?? null,
     toasts: () => store.get(toastsAtom).map((t) => `${t.kind}: ${t.text}`),
   };
-  window.__tsukue = helpers;
-  window.__tsukueDriverRun = async (id, code) => {
+  window.__kansei = helpers;
+  window.__kanseiDriverRun = async (id, code) => {
     let result: unknown;
     try {
       const fn = new Function("t", `return (async () => { ${code} })();`) as (t: typeof helpers) => Promise<unknown>;

@@ -162,7 +162,7 @@ const APPIMAGE_VARS: &[&str] = &[
 
 fn sanitize_env(cmd: &mut CommandBuilder) {
     // A tab running `claude` must not think it is nested inside another Claude
-    // Code session (happens when Tsukue itself is started from one, e.g. in dev).
+    // Code session (happens when Kansei itself is started from one, e.g. in dev).
     // Only the session markers are dropped; user-level CLAUDE_CODE_* settings
     // (for example provider switches) stay.
     for var in [
@@ -281,7 +281,7 @@ where
     cmd.cwd(cwd_path);
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
-    cmd.env("TSUKUE", "1");
+    cmd.env("KANSEI", "1");
     sanitize_env(&mut cmd);
 
     let mut child = pair
@@ -529,7 +529,7 @@ mod tests {
             "sh",
             &[
                 "-c",
-                "printf '%s|%s|%s|%s' \"$TERM\" \"$COLORTERM\" \"$TSUKUE\" \"$PWD\"; exit 3",
+                "printf '%s|%s|%s|%s' \"$TERM\" \"$COLORTERM\" \"$KANSEI\" \"$PWD\"; exit 3",
             ],
         );
         let (out, code) = drain(&rx, &id);
@@ -589,7 +589,7 @@ mod tests {
         let err = spawn(
             &state,
             "/tmp".into(),
-            "no-such-binary-tsukue".into(),
+            "no-such-binary-kansei".into(),
             vec![],
             80,
             24,

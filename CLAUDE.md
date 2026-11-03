@@ -1,4 +1,4 @@
-# Tsukue
+# Kansei
 
 Personal Claude Code cockpit: left sidebar of Claude items (memory, rules, MCPs, agents,
 skills, workflows, hooks, settings), a top rail of terminal tabs, one terminal

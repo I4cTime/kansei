@@ -93,11 +93,11 @@ describe("month grid", () => {
 describe("today's plan", () => {
   const schedule = sanitizeSchedule({
     rhythm: { sun: { area: "niwa", note: "rhythm note" }, mon: { area: "aibou", note: "" } },
-    overrides: { "2026-11-01": { area: "tsukue", note: "board day" }, "2026-11-08": { area: null, note: "" }, junk: { area: "x" } },
+    overrides: { "2026-11-01": { area: "kansei", note: "board day" }, "2026-11-08": { area: null, note: "" }, junk: { area: "x" } },
   });
 
   it("prefers the override over the rhythm", () => {
-    expect(todayPlan(schedule, "2026-11-01")).toEqual({ area: "tsukue", note: "board day", source: "override" });
+    expect(todayPlan(schedule, "2026-11-01")).toEqual({ area: "kansei", note: "board day", source: "override" });
     // An override can also clear the day.
     expect(todayPlan(schedule, "2026-11-08")).toEqual({ area: null, note: "", source: "override" });
     // Otherwise the weekday's rhythm (its note stays in the rhythm).

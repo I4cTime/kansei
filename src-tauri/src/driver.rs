@@ -1,6 +1,6 @@
-//! Dev-only UI driver: when `TSUKUE_DRIVER=/path/to.sock` is set, each line
+//! Dev-only UI driver: when `KANSEI_DRIVER=/path/to.sock` is set, each line
 //! received on that unix socket is run as async JS inside the webview (through
-//! `window.__tsukueDriverRun`, defined by src/app/driver.ts) and the JSON
+//! `window.__kanseiDriverRun`, defined by src/app/driver.ts) and the JSON
 //! result is written back as one line. Inert in release builds.
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -24,7 +24,7 @@ pub fn start(app: &tauri::AppHandle) {
     if !cfg!(debug_assertions) {
         return;
     }
-    let Some(path) = std::env::var_os("TSUKUE_DRIVER") else { return };
+    let Some(path) = std::env::var_os("KANSEI_DRIVER") else { return };
     let _ = std::fs::remove_file(&path);
     let listener = match UnixListener::bind(&path) {
         Ok(l) => l,
@@ -48,7 +48,7 @@ pub fn start(app: &tauri::AppHandle) {
                 let (tx, rx) = mpsc::channel();
                 app.state::<DriverState>().0.lock().unwrap().insert(seq, tx);
                 let code = serde_json::to_string(line.trim_end_matches(['\n', '\r'])).unwrap();
-                let js = format!("window.__tsukueDriverRun({seq}, {code})");
+                let js = format!("window.__kanseiDriverRun({seq}, {code})");
                 match app.get_webview_window("main") {
                     Some(w) => {
                         if let Err(e) = w.eval(js.as_str()) {

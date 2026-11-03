@@ -3,13 +3,13 @@
 
 fn main() {
     nvidia_workarounds();
-    tsukue_lib::run()
+    kansei_lib::run()
 }
 
 /// Two NVIDIA driver settings, forced whenever the NVIDIA driver is present.
 /// They override the session: a gaming profile in ~/.config/environment.d
 /// exports `__GL_SYNC_TO_VBLANK=1`, and honouring it brought the hidden-workspace
-/// hang back (stalls of 36 to 115 s on 2026-11-01). Set `TSUKUE_NVIDIA_ENV=keep`
+/// hang back (stalls of 36 to 115 s on 2026-11-01). Set `KANSEI_NVIDIA_ENV=keep`
 /// to leave the environment alone. Must run before GTK and EGL initialise, so
 /// they live here, not in the Tauri setup hook.
 ///
@@ -29,7 +29,7 @@ fn nvidia_workarounds() {
         if !std::path::Path::new("/proc/driver/nvidia").exists() {
             return;
         }
-        if std::env::var_os("TSUKUE_NVIDIA_ENV").is_some_and(|v| v == "keep") {
+        if std::env::var_os("KANSEI_NVIDIA_ENV").is_some_and(|v| v == "keep") {
             return;
         }
         for (key, value) in [("__NV_DISABLE_EXPLICIT_SYNC", "1"), ("__GL_SYNC_TO_VBLANK", "0")] {

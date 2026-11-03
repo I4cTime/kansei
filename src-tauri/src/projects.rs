@@ -288,11 +288,11 @@ mod tests {
         let (_t, base) = base();
         let p = s(&base);
         let mut many: Vec<String> = vec![p.clone(), p.clone()];
-        many.extend((0..MAX_PATHS + 50).map(|i| format!("/nonexistent-tsukue-test/{i}")));
+        many.extend((0..MAX_PATHS + 50).map(|i| format!("/nonexistent-kansei-test/{i}")));
         let list = infos(&many, None);
         assert_eq!(list.len(), MAX_PATHS);
         assert_eq!(list[0].path, p);
-        assert_eq!(list[1].path, "/nonexistent-tsukue-test/0");
+        assert_eq!(list[1].path, "/nonexistent-kansei-test/0");
     }
 
     #[test]

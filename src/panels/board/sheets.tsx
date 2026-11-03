@@ -96,8 +96,8 @@ export function NewTaskSheet({ items, initialEpic, initialDate, close }: { items
           </Select>
         </FieldBlock>
         <FieldBlock label="Repository" hint="owner/name, where the code lives">
-          <TextInput value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="I4cTime/aibou" list="tsukue-board-repos" className="font-mono" aria-label="Repository" />
-          <datalist id="tsukue-board-repos">
+          <TextInput value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="I4cTime/aibou" list="kansei-board-repos" className="font-mono" aria-label="Repository" />
+          <datalist id="kansei-board-repos">
             {repos.map((r) => (
               <option key={r} value={r} />
             ))}

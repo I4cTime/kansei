@@ -324,7 +324,7 @@ function AppSettings() {
           </Select>
         </Field>
       </div>
-      <Note>Saved to ~/.local/share/tsukue/prefs.json. Terminals pick up font and theme changes live.</Note>
+      <Note>Saved to ~/.local/share/kansei/prefs.json. Terminals pick up font and theme changes live.</Note>
       <div className="h-3" />
     </div>
   );

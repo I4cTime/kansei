@@ -19,14 +19,14 @@ const tree: WorkspaceNode[] = [
       node("/d/products/ring", "group", [node("/d/products/q-ring", "project")]),
     ]),
     node("/d/sites", "group", [node("/d/sites/i4c-sites", "project", [node("/d/sites/i4c-sites/apps/cryo", "subproject"), node("/d/sites/i4c-sites/apps/Tanko", "subproject")])]),
-    node("/d/lab", "group", [node("/d/lab/Tsukue", "project")]),
+    node("/d/lab", "group", [node("/d/lab/Kansei", "project")]),
   ]),
 ];
 
 describe("areaProject", () => {
   it("matches the basename case-insensitively, projects before subprojects", () => {
     expect(areaProject("aibou", tree, {})).toBe("/d/products/aibou");
-    expect(areaProject("tsukue", tree, {})).toBe("/d/lab/Tsukue");
+    expect(areaProject("kansei", tree, {})).toBe("/d/lab/Kansei");
     expect(areaProject("Q-Ring", tree, {})).toBe("/d/products/q-ring");
     expect(areaProject("cryo", tree, {})).toBe("/d/products/cryo");
     expect(areaProject("tanko", tree, {})).toBe("/d/sites/i4c-sites/apps/Tanko");

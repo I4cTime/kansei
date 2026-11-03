@@ -175,7 +175,7 @@ export function McpPanel() {
           )}
           <Note className="pt-3">
             Reads and writes the mcpServers blocks of ~/.claude.json. Servers in a repo's .mcp.json are under the Project scope. A backup is kept at
-            ~/.claude.json.tsukue-bak.
+            ~/.claude.json.kansei-bak.
           </Note>
           <ExtrasGroups data={extras.data} home={paths?.home} />
           <div className="h-3" />
@@ -248,7 +248,7 @@ function ExtrasGroups({ data, home }: { data: McpExtras | null; home: string | u
                   <IconButton
                     icon={FileText}
                     title={`Open ${tildify(p.file, home)} (read only)`}
-                    onClick={() => openEditor({ path: p.file, title: `${p.plugin} .mcp.json`, readOnly: true, note: "Installed by the plugin. Claude Code manages this file; Tsukue only shows it." })}
+                    onClick={() => openEditor({ path: p.file, title: `${p.plugin} .mcp.json`, readOnly: true, note: "Installed by the plugin. Claude Code manages this file; Kansei only shows it." })}
                   />
                 }
               />
@@ -440,8 +440,8 @@ function McpEditor({
       </div>
       {form.scope === "project" && (
         <Field label="Project path">
-          <TextInput value={form.project} onChange={(e) => set("project", e.target.value)} placeholder="/home/you/Develop/repo" list="tsukue-mcp-projects" title={form.project} />
-          <datalist id="tsukue-mcp-projects">
+          <TextInput value={form.project} onChange={(e) => set("project", e.target.value)} placeholder="/home/you/Develop/repo" list="kansei-mcp-projects" title={form.project} />
+          <datalist id="kansei-mcp-projects">
             {projectPaths.map((p) => (
               <option key={p} value={p} />
             ))}

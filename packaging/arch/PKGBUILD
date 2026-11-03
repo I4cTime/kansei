@@ -1,11 +1,14 @@
 # Maintainer: I4C Studio <i4c.studio.dev@gmail.com>
 
-pkgname=tsukue
+pkgname=kansei
 pkgver=0.1.0.r35.g844b441
 pkgrel=1
 pkgdesc='Claude Code cockpit: terminal tabs plus a sidebar that edits Claude memory, MCP servers, agents, skills, hooks and settings'
 arch=('x86_64')
-url='https://github.com/I4cTime/tsukue'
+url='https://github.com/I4cTime/kansei'
+# Renamed from tsukue on 2026-11-03: pacman swaps the old package out.
+conflicts=('tsukue')
+replaces=('tsukue')
 # The repo has no LICENSE file yet, so no licence text is installed.
 license=('custom')
 depends=(
@@ -29,10 +32,10 @@ options=('!debug' '!strip')
 # Local build from the committed checkout. A release PKGBUILD would use the
 # GitHub tarball instead, e.g.
 #   source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-source=("$pkgname::git+file:///home/i4ctime/Develop/lab/tsukue"
-        'tsukue.desktop')
+source=("$pkgname::git+file:///home/i4ctime/Develop/lab/kansei"
+        'kansei.desktop')
 sha256sums=('SKIP'
-            'b4bcbf7821d88389c2c7c62eb31202eb89218942f7c42a0dffca9150cce2dd75')
+            '858133a35d403e552c39e791dec1bde5d55ad3b9e3ce1d8b2c1ea98b2f7e4c5a')
 
 pkgver() {
   cd "$pkgname"
@@ -63,11 +66,11 @@ build() {
 
 package() {
   cd "$pkgname"
-  install -Dm755 src-tauri/target/release/tsukue "$pkgdir/usr/bin/tsukue"
-  install -Dm644 "$srcdir/tsukue.desktop" "$pkgdir/usr/share/applications/tsukue.desktop"
-  install -Dm644 src-tauri/icons/32x32.png "$pkgdir/usr/share/icons/hicolor/32x32/apps/tsukue.png"
-  install -Dm644 src-tauri/icons/128x128.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/tsukue.png"
-  install -Dm644 src-tauri/icons/128x128@2x.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/tsukue.png"
+  install -Dm755 src-tauri/target/release/kansei "$pkgdir/usr/bin/kansei"
+  install -Dm644 "$srcdir/kansei.desktop" "$pkgdir/usr/share/applications/kansei.desktop"
+  install -Dm644 src-tauri/icons/32x32.png "$pkgdir/usr/share/icons/hicolor/32x32/apps/kansei.png"
+  install -Dm644 src-tauri/icons/128x128.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/kansei.png"
+  install -Dm644 src-tauri/icons/128x128@2x.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/kansei.png"
   if [[ -f LICENSE ]]; then
     install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   fi

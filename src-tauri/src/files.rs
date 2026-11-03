@@ -1,7 +1,7 @@
 //! Files inside the allowlist (CONTRACT.md "Files inside the allowlist").
 //!
 //! Allowed: `~/.claude/` (recursive), the exact file `~/.claude.json`, and the
-//! app data dir `~/.local/share/tsukue/`. `~/.claude/.credentials.json` is always
+//! app data dir `~/.local/share/kansei/`. `~/.claude/.credentials.json` is always
 //! refused: it holds the OAuth tokens and must never reach the webview.
 //!
 //! Every path is first checked lexically (absolute, no `..`), then canonicalised
@@ -13,7 +13,7 @@
 //! Project scope (CONTRACT.md "Project scope"): every pty cwd spawned this run
 //! and every root returned by `project_root` is a project root. Below such a
 //! root only `.claude/**`, `.mcp.json`, `CLAUDE.md`, `CLAUDE.local.md` and
-//! `PROJECTS.md` (the workspace registry Tsukue generates, CONTRACT.md
+//! `PROJECTS.md` (the workspace registry Kansei generates, CONTRACT.md
 //! "Workspaces") are allowed, with the same `..` and symlink rules as `~/.claude`.
 //! `workspace_scan` registers every workspace root, project and subproject.
 
@@ -35,17 +35,39 @@ pub fn home_dir() -> Result<PathBuf, String> {
 }
 
 pub fn app_data_dir() -> Result<PathBuf, String> {
-    // TSUKUE_DATA_DIR lets a test instance keep its tabs and prefs apart from
+    // KANSEI_DATA_DIR lets a test instance keep its tabs and prefs apart from
     // the real ones without touching XDG_DATA_HOME (which would also move mise).
-    if let Some(dir) = std::env::var_os("TSUKUE_DATA_DIR").filter(|v| !v.is_empty()) {
+    if let Some(dir) = std::env::var_os("KANSEI_DATA_DIR").filter(|v| !v.is_empty()) {
         let dir = PathBuf::from(dir);
         if dir.is_absolute() {
             return Ok(dir);
         }
     }
-    dirs::data_dir()
-        .map(|d| d.join("tsukue"))
-        .ok_or_else(|| "data directory not found".to_string())
+    let base = dirs::data_dir().ok_or_else(|| "data directory not found".to_string())?;
+    let dir = base.join("kansei");
+    move_legacy_dir(&base.join("tsukue"), &dir);
+    Ok(dir)
+}
+
+/// The app was called Tsukue until 2026-11-03. Its data dir (`<data>/tsukue`:
+/// tabs, prefs, board cache, schedule, workspaces) and WebKit's per-identifier
+/// dir (`<data>/studio.i4c.tsukue`) are moved to the Kansei names the first
+/// time the new name finds no dir of its own. Idempotent, silent when there is
+/// nothing to move; a failed move is logged and the new empty dir is used.
+pub fn migrate_legacy_dirs() {
+    if let Some(base) = dirs::data_dir() {
+        move_legacy_dir(&base.join("tsukue"), &base.join("kansei"));
+        move_legacy_dir(&base.join("studio.i4c.tsukue"), &base.join("studio.i4c.kansei"));
+    }
+}
+
+fn move_legacy_dir(old: &Path, new: &Path) {
+    if new.exists() || !old.is_dir() {
+        return;
+    }
+    if let Err(e) = fs::rename(old, new) {
+        eprintln!("kansei: could not move {} to {}: {e}", old.display(), new.display());
+    }
 }
 
 pub fn claude_dir() -> Result<PathBuf, String> {
@@ -94,7 +116,7 @@ pub fn atomic_write(path: &Path, bytes: &[u8], new_mode: Option<u32>) -> io::Res
     }
 
     let tmp = parent.join(format!(
-        ".{}.tsukue-{}-{}.tmp",
+        ".{}.kansei-{}-{}.tmp",
         name.to_string_lossy(),
         std::process::id(),
         TMP_COUNTER.fetch_add(1, Ordering::SeqCst)
@@ -167,7 +189,7 @@ fn project_roots() -> Vec<PathBuf> {
         .collect()
 }
 
-/// The part of a project below its root that Tsukue may touch.
+/// The part of a project below its root that Kansei may touch.
 fn project_rel_ok(rel: &Path) -> bool {
     let mut parts = rel.components();
     match (parts.next(), parts.next()) {
@@ -676,7 +698,7 @@ mod tests {
         fs::write(home.join(".ssh/id"), "secret").unwrap();
         fs::write(home.join(".claude/.credentials.json"), "{}").unwrap();
         fs::write(home.join(".claude.json"), "{}").unwrap();
-        let app_data = home.join(".local/share/tsukue");
+        let app_data = home.join(".local/share/kansei");
         let roots = Roots::new(&home, &app_data).unwrap();
         Fixture {
             _tmp: tmp,
@@ -700,7 +722,7 @@ mod tests {
         assert!(
             r(
                 &f,
-                &format!("{h}/.local/share/tsukue/tabs.json"),
+                &format!("{h}/.local/share/kansei/tabs.json"),
                 Access::Write
             )
             .is_ok()
@@ -756,7 +778,7 @@ mod tests {
         fs::create_dir_all(proj.join("src")).unwrap();
         fs::write(proj.join("src/main.rs"), "fn main() {}").unwrap();
         fs::write(proj.join(".env"), "SECRET=1").unwrap();
-        let app_data = f.home.join(".local/share/tsukue");
+        let app_data = f.home.join(".local/share/kansei");
         let roots = Roots::new(&f.home, &app_data)
             .unwrap()
             .with_projects([proj.clone()]);
@@ -796,13 +818,13 @@ mod tests {
             assert!(err.starts_with("path not allowed"), "{rel}: {err}");
         }
         // Without the project root registered, nothing in it is allowed.
-        let none = Roots::new(&f.home, &f.home.join(".local/share/tsukue")).unwrap();
+        let none = Roots::new(&f.home, &f.home.join(".local/share/kansei")).unwrap();
         assert!(
             none.resolve(&f.home, &format!("{p}/CLAUDE.md"), Access::Read)
                 .is_err()
         );
         // Credentials stay refused even when home is a project root.
-        let home_proj = Roots::new(&f.home, &f.home.join(".local/share/tsukue"))
+        let home_proj = Roots::new(&f.home, &f.home.join(".local/share/kansei"))
             .unwrap()
             .with_projects([f.home.clone()]);
         let h = f.home.to_string_lossy().to_string();
@@ -938,7 +960,7 @@ mod tests {
         use std::os::unix::fs::symlink;
         let f = fixture();
         let h = f.home.to_string_lossy().to_string();
-        let roots = Roots::new(&f.home, &f.home.join(".local/share/tsukue"))
+        let roots = Roots::new(&f.home, &f.home.join(".local/share/kansei"))
             .unwrap()
             .with_projects([f.home.clone()]);
         // Omarchy-style skill linked in from outside home.
@@ -1067,7 +1089,7 @@ mod tests {
         fs::create_dir_all(other.join("b")).unwrap();
         assert_eq!(find_project_root(&s(&other.join("b")), h).unwrap(), other);
 
-        for bad in ["relative/dir", "/definitely/not/here/tsukue"] {
+        for bad in ["relative/dir", "/definitely/not/here/kansei"] {
             let err = find_project_root(bad, h).unwrap_err();
             assert!(err.starts_with("cwd does not exist"), "{err}");
         }

@@ -15,7 +15,7 @@ export const DONE_LIMIT = 10;
 /** The Area options on 2026-11-01, for when the board has not been fetched yet. */
 export const FALLBACK_AREAS = [
   "q-ring", "tanko", "groundrules", "lookout", "cryo", "mineui", "protonshift", "sites", "atelier", "deathbell",
-  "desktop", "infra", "marketing", "aibou", "niwa", "shiori", "tsukue", "synthesist", "blazedtravel", "job-hunt",
+  "desktop", "infra", "marketing", "aibou", "niwa", "shiori", "kansei", "synthesist", "blazedtravel", "job-hunt",
 ];
 
 /** The last snapshot (cached or fetched); null before board.json was read. */
