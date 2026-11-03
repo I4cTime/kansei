@@ -43,30 +43,57 @@ pub fn app_data_dir() -> Result<PathBuf, String> {
             return Ok(dir);
         }
     }
-    let base = dirs::data_dir().ok_or_else(|| "data directory not found".to_string())?;
-    let dir = base.join("kansei");
-    move_legacy_dir(&base.join("tsukue"), &dir);
-    Ok(dir)
+    dirs::data_dir()
+        .map(|d| d.join("kansei"))
+        .ok_or_else(|| "data directory not found".to_string())
 }
 
 /// The app was called Tsukue until 2026-11-03. Its data dir (`<data>/tsukue`:
 /// tabs, prefs, board cache, schedule, workspaces) and WebKit's per-identifier
-/// dir (`<data>/studio.i4c.tsukue`) are moved to the Kansei names the first
-/// time the new name finds no dir of its own. Idempotent, silent when there is
-/// nothing to move; a failed move is logged and the new empty dir is used.
+/// dir (`<data>/studio.i4c.tsukue`) carry over to the Kansei names. Called once
+/// from `run`, before anything reads the data dir; never from `app_data_dir`,
+/// so tests and tools do not move real directories as a side effect.
 pub fn migrate_legacy_dirs() {
     if let Some(base) = dirs::data_dir() {
-        move_legacy_dir(&base.join("tsukue"), &base.join("kansei"));
-        move_legacy_dir(&base.join("studio.i4c.tsukue"), &base.join("studio.i4c.kansei"));
+        merge_legacy_dir(&base.join("tsukue"), &base.join("kansei"));
+        merge_legacy_dir(&base.join("studio.i4c.tsukue"), &base.join("studio.i4c.kansei"));
     }
 }
 
-fn move_legacy_dir(old: &Path, new: &Path) {
-    if new.exists() || !old.is_dir() {
+/// Rename `old` to `new` when `new` does not exist yet. When both exist (an
+/// instance under the old name kept running after Kansei first started and
+/// wrote its tabs on exit), copy over each top-level file of `old` that is
+/// newer than its namesake in `new`, logs excepted. Silent when `old` is
+/// missing; a failed move or copy is reported on stderr and the app goes on
+/// with whatever `new` holds.
+fn merge_legacy_dir(old: &Path, new: &Path) {
+    if !old.is_dir() {
         return;
     }
-    if let Err(e) = fs::rename(old, new) {
-        eprintln!("kansei: could not move {} to {}: {e}", old.display(), new.display());
+    if !new.exists() {
+        if let Err(e) = fs::rename(old, new) {
+            eprintln!("kansei: could not move {} to {}: {e}", old.display(), new.display());
+        }
+        return;
+    }
+    let Ok(entries) = fs::read_dir(old) else { return };
+    for entry in entries.flatten() {
+        let from = entry.path();
+        let name = entry.file_name();
+        if !from.is_file() || name.to_string_lossy().contains(".log") {
+            continue;
+        }
+        let to = new.join(&name);
+        let newer = match (fs::metadata(&from).and_then(|m| m.modified()), fs::metadata(&to).and_then(|m| m.modified())) {
+            (Ok(a), Ok(b)) => a > b,
+            (Ok(_), Err(_)) => true,
+            _ => false,
+        };
+        if newer {
+            if let Err(e) = fs::copy(&from, &to) {
+                eprintln!("kansei: could not copy {} to {}: {e}", from.display(), to.display());
+            }
+        }
     }
 }
 
@@ -1179,5 +1206,34 @@ mod tests {
             fs::metadata(&q).unwrap().permissions().mode() & 0o777,
             0o600
         );
+    }
+    #[test]
+    fn merge_legacy_dir_moves_then_merges_newer_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = dir.path().join("tsukue");
+        let new = dir.path().join("kansei");
+        fs::create_dir(&old).unwrap();
+        fs::write(old.join("tabs.json"), "v1").unwrap();
+        fs::write(old.join("tsukue.log"), "log").unwrap();
+        // No new dir yet: the whole dir is renamed.
+        merge_legacy_dir(&old, &new);
+        assert!(!old.exists());
+        assert_eq!(fs::read_to_string(new.join("tabs.json")).unwrap(), "v1");
+        // Both exist: only files newer than their namesake come over, logs never.
+        fs::create_dir(&old).unwrap();
+        fs::write(old.join("prefs.json"), "old-only").unwrap();
+        fs::write(old.join("tsukue.log"), "log").unwrap();
+        fs::write(old.join("tabs.json"), "v2").unwrap();
+        let past = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+        fs::File::open(new.join("tabs.json")).unwrap().set_modified(past).unwrap();
+        fs::write(old.join("board.json"), "stale").unwrap();
+        fs::File::open(old.join("board.json")).unwrap().set_modified(past).unwrap();
+        fs::write(new.join("board.json"), "fresh").unwrap();
+        merge_legacy_dir(&old, &new);
+        assert!(old.exists());
+        assert_eq!(fs::read_to_string(new.join("tabs.json")).unwrap(), "v2");
+        assert_eq!(fs::read_to_string(new.join("prefs.json")).unwrap(), "old-only");
+        assert_eq!(fs::read_to_string(new.join("board.json")).unwrap(), "fresh");
+        assert!(!new.join("tsukue.log").exists());
     }
 }
