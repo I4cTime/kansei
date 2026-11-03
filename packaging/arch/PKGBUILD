@@ -1,7 +1,7 @@
 # Maintainer: I4C Studio <i4c.studio.dev@gmail.com>
 
 pkgname=kansei
-pkgver=0.1.0.r35.g844b441
+pkgver=0.1.0.r40.g0636004
 pkgrel=1
 pkgdesc='Claude Code cockpit: terminal tabs plus a sidebar that edits Claude memory, MCP servers, agents, skills, hooks and settings'
 arch=('x86_64')
