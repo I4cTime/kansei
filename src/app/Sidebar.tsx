@@ -2,20 +2,24 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import { useAtomValue } from "jotai";
 import { CalendarDays, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { PANELS } from "../panels";
-import { snapshotAtom } from "../panels/board/model";
+import { boardConfigAtom, snapshotAtom } from "../panels/board/model";
 import { dayTasks, scheduleAtom, todayAtom, todayPlan } from "../panels/calendar/model";
 import { SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_RAIL, clampSidebar, prefsAtom, setPrefs } from "./prefs";
 import { panelShortcut } from "./shortcuts";
 import { IconButton } from "./ui";
 
-/** One line above the nav: today's area and how many tasks are scheduled. Opens Calendar. */
+/**
+ * One line above the nav: today's area and how many tasks are scheduled (the
+ * count only with a connected board). Opens Calendar.
+ */
 function TodayStrip() {
   const today = useAtomValue(todayAtom);
   const schedule = useAtomValue(scheduleAtom);
   const snap = useAtomValue(snapshotAtom);
+  const config = useAtomValue(boardConfigAtom);
   const plan = todayPlan(schedule, today);
   const n = dayTasks(snap?.items ?? [], today).length;
-  const text = `Today · ${plan.area ?? "no plan"} · ${n} ${n === 1 ? "task" : "tasks"}`;
+  const text = `Today · ${plan.area ?? "no plan"}${config ? ` · ${n} ${n === 1 ? "task" : "tasks"}` : ""}`;
   return (
     <button
       type="button"

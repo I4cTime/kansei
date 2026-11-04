@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAtomValue } from "jotai";
-import { FileText, FolderPlus, Palette as PaletteIcon, Upload, X } from "lucide-react";
+import { ExternalLink, FileText, FolderPlus, Palette as PaletteIcon, Unlink, Upload, X } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { claudeCommandAtom, prefsAtom, savePrefs, type Prefs } from "../../app/prefs";
 import { refreshProject } from "../../app/project";
 import { theme as themeIpc, type ProjectInfo } from "../../lib/ipc";
@@ -15,6 +16,8 @@ import { Note, Panel, SectionHeader } from "../shared/list";
 import { basename, joinPath, tildify } from "../shared/paths";
 import { addWorkspaceRootWithPicker, removeWorkspaceRoot } from "../projects/actions";
 import { ScopeSwitch, useScope } from "../shared/ScopeSwitch";
+import { BoardConnectForm, RequiredFieldsNote } from "../board/BoardConnect";
+import { disconnectBoard } from "../board/actions";
 
 type Tab = "claude" | "app";
 
@@ -294,6 +297,7 @@ function AppSettings() {
         </Field>
       </div>
       <WorkspaceRoots />
+      <BoardSettings />
       <SectionHeader title="Terminal" />
       <div className="flex flex-col gap-2.5 px-3 py-1">
         <Field label="Font size" hint="8 to 32 px">
@@ -441,6 +445,60 @@ function PresetControls({ preset, effects, save }: { preset: Preset; effects: bo
         </Button>
       </div>
     </div>
+  );
+}
+
+/** The connected GitHub Project: owner, number and hub repo, Connect / Reconnect and Disconnect. */
+function BoardSettings() {
+  const config = useAtomValue(prefsAtom).board;
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const disconnect = async () => {
+    setBusy(true);
+    try {
+      await disconnectBoard();
+      toast.info("Board disconnected");
+    } catch (e) {
+      toast.error(e, "Could not save prefs");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <SectionHeader title="Board" />
+      <div className="flex flex-col gap-2.5 px-3 py-1" data-board-settings="">
+        {config ? (
+          <div className="flex min-w-0 items-center gap-1.5 text-xs text-fg-muted">
+            <span className="shrink-0">Connected to</span>
+            <button
+              type="button"
+              className="inline-flex min-w-0 cursor-pointer items-center gap-1 text-accent underline-offset-2 hover:underline"
+              title={config.url}
+              onClick={() => openUrl(config.url).catch((e) => toast.error(e, "Could not open the browser"))}
+            >
+              <span className="truncate">{config.title}</span>
+              <ExternalLink size={11} className="shrink-0" />
+            </button>
+          </div>
+        ) : (
+          <span className="text-[11px] text-fg-muted">Not connected. Board and Calendar tasks stay empty.</span>
+        )}
+        <BoardConnectForm
+          config={config}
+          extra={
+            config && (
+              <Button icon={Unlink} variant="ghost" disabled={busy} onClick={() => void disconnect()}>
+                Disconnect
+              </Button>
+            )
+          }
+        />
+      </div>
+      <div className="px-3 py-1">
+        <RequiredFieldsNote />
+      </div>
+    </>
   );
 }
 

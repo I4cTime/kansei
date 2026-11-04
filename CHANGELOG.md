@@ -8,6 +8,14 @@ releases yet; everything so far is on `main` as 0.1.x.
 
 ### Added
 
+- **Board configuration** (2026-11-03). The Board and Calendar work with any
+  GitHub Project (v2) you own, as a user or through an organisation: connect
+  it from the Board panel's setup card or Settings, This app, Board (owner,
+  project number, hub repo for epics; Reconnect and Disconnect there).
+  Connecting checks the Status, Kind, Area, Scheduled and Order fields and
+  says in one toast what the project lacks. Nothing about the author's board
+  is compiled in any more. Without a connected project the Calendar keeps its
+  rhythm, notes and activity, and `SCHEDULE.md` is written without tasks.
 - **Public repo files** (2026-11-03): README rewritten for a public audience,
   CONTRIBUTING, SECURITY, this changelog, CI for the frontend and Rust checks,
   Dependabot, issue and pull request templates. AGPL-3.0-only licence.

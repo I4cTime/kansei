@@ -116,11 +116,11 @@ export type WorkspaceNode = {
 /** Board lanes (the Status field), in order. */
 export type BoardStatus = "Backlog" | "Ready" | "In progress" | "In review" | "Done";
 export type BoardKind = "Epic" | "Task";
-/** One item of the I4C GitHub Project (CONTRACT.md "Board and Calendar"). Dates are YYYY-MM-DD. */
+/** One item of the connected GitHub Project (CONTRACT.md "Board and Calendar"). Dates are YYYY-MM-DD. */
 export type BoardItem = {
   itemId: string;
   number: number;
-  /** "I4cTime/aibou" */
+  /** "owner/name" */
   repo: string;
   title: string;
   url: string;
@@ -143,6 +143,29 @@ export type BoardItem = {
 /** fetchedAt is ISO UTC ("" when never fetched); areas are the Area field's options in board order. */
 export type BoardSnapshot = { fetchedAt: string; items: BoardItem[]; error: string | null; areas: string[] };
 export type BoardField = "status" | "kind" | "area" | "scheduled" | "order" | "started" | "target" | "doneWhen" | "outcome";
+/** The connected GitHub Project (prefs.json `board`, CONTRACT.md "Board configuration"). */
+export type BoardConfig = {
+  /** GitHub user or organisation login. */
+  owner: string;
+  /** The N in github.com/users/<owner>/projects/N. */
+  projectNumber: number;
+  /** "owner/name": where epics are created (Kind = Epic). */
+  hubRepo: string;
+  /** Resolved node id, PVT_... */
+  projectId: string;
+  /** Resolved project URL. */
+  url: string;
+  /** Resolved project title. */
+  title: string;
+};
+/** board_configure: the resolved config and what the project lacks of the conventions. */
+export type BoardSetup = {
+  config: BoardConfig;
+  /** Required fields the project lacks (or has with another type). */
+  missingFields: string[];
+  /** Field -> required option names it lacks. */
+  missingOptions: Record<string, string[]>;
+};
 export type GhStatus = { available: boolean; login: string | null; scopes: string[]; error: string | null };
 export type WeekdayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 export type DayPlan = { area: string | null; note: string };
@@ -222,16 +245,26 @@ export const mcp = {
 export const board = {
   /** `gh auth status` (gh runs without GITHUB_TOKEN). */
   ghStatus: () => invoke<GhStatus>("gh_status"),
-  /** Fetch and cache the board; without force a snapshot younger than 60 s comes back as is. Errors are in `error`. */
+  /**
+   * Fetch and cache the board; without force a snapshot younger than 60 s comes back as is. Errors are in `error`
+   * ("Board not configured" without a config, with no items).
+   */
   fetch: (force = false) => invoke<BoardSnapshot>("board_fetch", { force }),
+  /** board.json, or the "Board not configured" snapshot without a config. */
   cached: () => invoke<BoardSnapshot | null>("board_cached"),
   /** Single-select values are option names; null clears. Writes to GitHub. */
   setField: (itemId: string, field: BoardField, value: string | number | null) => invoke<BoardItem>("board_set_field", { itemId, field, value }),
   /** gh issue create, sub-issue of `epic`, added to the board as a Task. Writes to GitHub. */
   createTask: (a: { repo: string; title: string; body: string; epic: { repo: string; number: number } | null; scheduled: string | null }) =>
     invoke<BoardItem>("board_create_task", a),
-  /** An epic in I4cTime/focus. Writes to GitHub. */
+  /** An epic in the configured hub repo. Writes to GitHub. */
   createEpic: (a: { title: string; body: string; area: string | null; doneWhen: string | null }) => invoke<BoardItem>("board_create_epic", a),
+  /**
+   * Resolve a user's or organisation's Project v2 and check its fields. Saves
+   * nothing: the caller puts `config` into prefs. Rejects when the project
+   * cannot be resolved.
+   */
+  configure: (a: { owner: string; projectNumber: number; hubRepo: string }) => invoke<BoardSetup>("board_configure", a),
 };
 
 export const schedule = {

@@ -6,7 +6,7 @@ import type { BoardItem, BoardStatus } from "../../lib/ipc";
 import { Button, Select, TextArea, TextInput, cx } from "../ui";
 import { errText } from "../shared/hooks";
 import { Sheet } from "../shared/Sheet";
-import { HUB_REPO, LANES, isEpic, laneOf, repoShort } from "./model";
+import { LANES, isEpic, laneOf, repoShort } from "./model";
 import { createEpic, createTask, setItemField } from "./actions";
 
 function FieldBlock({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
@@ -39,12 +39,27 @@ function Footer({ error, busy, onCancel, onConfirm, confirmLabel, disabled }: { 
 
 const REPO_RE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 
-export function NewTaskSheet({ items, initialEpic, initialDate, close }: { items: BoardItem[]; initialEpic?: BoardItem | null; initialDate?: string | null; close: () => void }) {
+/** The repo an epic's tasks usually live in: `<hub owner>/<area>`. */
+const areaRepo = (hubRepo: string | null, area: string | null | undefined) => (hubRepo && area ? `${hubRepo.slice(0, hubRepo.indexOf("/"))}/${area}` : "");
+
+export function NewTaskSheet({
+  items,
+  hubRepo,
+  initialEpic,
+  initialDate,
+  close,
+}: {
+  items: BoardItem[];
+  hubRepo: string | null;
+  initialEpic?: BoardItem | null;
+  initialDate?: string | null;
+  close: () => void;
+}) {
   const epics = useMemo(() => items.filter((i) => isEpic(i) && i.state === "open").sort((a, b) => a.title.localeCompare(b.title)), [items]);
-  const repos = useMemo(() => [...new Set(items.filter((i) => i.repo !== HUB_REPO).map((i) => i.repo))].sort(), [items]);
+  const repos = useMemo(() => [...new Set(items.filter((i) => i.repo !== hubRepo).map((i) => i.repo))].sort(), [items, hubRepo]);
   const [epicKey, setEpicKey] = useState(initialEpic ? initialEpic.itemId : "");
   const epic = epics.find((e) => e.itemId === epicKey) ?? null;
-  const [repo, setRepo] = useState(initialEpic?.area ? `I4cTime/${initialEpic.area}` : "");
+  const [repo, setRepo] = useState(areaRepo(hubRepo, initialEpic?.area));
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [scheduled, setScheduled] = useState(initialDate ?? "");
@@ -56,7 +71,7 @@ export function NewTaskSheet({ items, initialEpic, initialDate, close }: { items
     setEpicKey(id);
     const e = epics.find((x) => x.itemId === id);
     // A fresh form follows the epic's area (the repo is usually named like it).
-    if (e?.area && (!repo.trim() || repo === `I4cTime/${epic?.area ?? ""}`)) setRepo(`I4cTime/${e.area}`);
+    if (e?.area && hubRepo && (!repo.trim() || repo === areaRepo(hubRepo, epic?.area))) setRepo(areaRepo(hubRepo, e.area));
   };
 
   const submit = async () => {
@@ -80,7 +95,7 @@ export function NewTaskSheet({ items, initialEpic, initialDate, close }: { items
   return (
     <Sheet
       title="New task"
-      subtitle="gh issue create, then a sub-issue of its epic on the I4C board"
+      subtitle="gh issue create, then a sub-issue of its epic on the board"
       onClose={close}
       footer={<Footer error={error} busy={busy} onCancel={close} onConfirm={() => void submit()} confirmLabel="Create task" disabled={!repoOk || !title.trim()} />}
     >
@@ -96,7 +111,7 @@ export function NewTaskSheet({ items, initialEpic, initialDate, close }: { items
           </Select>
         </FieldBlock>
         <FieldBlock label="Repository" hint="owner/name, where the code lives">
-          <TextInput value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="I4cTime/aibou" list="kansei-board-repos" className="font-mono" aria-label="Repository" />
+          <TextInput value={repo} onChange={(e) => setRepo(e.target.value)} placeholder={hubRepo ? `${hubRepo.slice(0, hubRepo.indexOf("/"))}/app` : "owner/name"} list="kansei-board-repos" className="font-mono" aria-label="Repository" />
           <datalist id="kansei-board-repos">
             {repos.map((r) => (
               <option key={r} value={r} />
@@ -117,7 +132,7 @@ export function NewTaskSheet({ items, initialEpic, initialDate, close }: { items
   );
 }
 
-export function NewEpicSheet({ areas, close }: { areas: string[]; close: () => void }) {
+export function NewEpicSheet({ areas, hubRepo, close }: { areas: string[]; hubRepo: string | null; close: () => void }) {
   const [title, setTitle] = useState("");
   const [area, setArea] = useState("");
   const [doneWhen, setDoneWhen] = useState("");
@@ -140,7 +155,7 @@ export function NewEpicSheet({ areas, close }: { areas: string[]; close: () => v
   return (
     <Sheet
       title="New epic"
-      subtitle={`An issue in ${HUB_REPO} with Kind Epic`}
+      subtitle={`An issue in ${hubRepo ?? "the hub repo"} with Kind Epic`}
       onClose={close}
       footer={<Footer error={error} busy={busy} onCancel={close} onConfirm={() => void submit()} confirmLabel="Create epic" disabled={!title.trim()} />}
     >
@@ -220,7 +235,7 @@ export function MoveScheduleSheet({ item, close }: { item: BoardItem; close: () 
           </div>
         </FieldBlock>
         <p className={cx("text-[11px] leading-relaxed text-fg-muted")}>
-          Changes go to the I4C board on GitHub ({repoShort(item.repo)}#{item.number}) and come back here when they land.
+          Changes go to the board on GitHub ({repoShort(item.repo)}#{item.number}) and come back here when they land.
         </p>
       </div>
     </Sheet>

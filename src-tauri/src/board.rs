@@ -1,7 +1,11 @@
-//! Board and Calendar (CONTRACT.md "Board and Calendar").
+//! Board and Calendar (CONTRACT.md "Board and Calendar" and "Board
+//! configuration").
 //!
-//! The source of truth is the GitHub Project "I4C" (user I4cTime, number 3).
-//! Kansei keeps only a cache of it in `<appData>/board.json`, and owns the
+//! The source of truth is the GitHub Project v2 the user connected: the
+//! `board` key of `<appData>/prefs.json` (owner, project number, hub repo and
+//! the resolved id, URL and title), read per call. Without it the board
+//! commands report "Board not configured" and SCHEDULE.md carries the rhythm
+//! alone. Kansei keeps only a cache of the board in `<appData>/board.json`, and owns the
 //! calendar layer: `<appData>/schedule.json` (weekly rhythm + per-day
 //! overrides) and the generated `SCHEDULE.md` in the first workspace root.
 //!
@@ -27,11 +31,8 @@ use crate::files::{app_data_dir, atomic_write, blocking, claude_dir, home_dir};
 use crate::sessions::history_lines;
 use crate::workspace;
 
-pub const OWNER: &str = "I4cTime";
-pub const PROJECT_NUMBER: &str = "3";
-pub const PROJECT_ID: &str = "PVT_kwHOAW7RTs4BfzfL";
-pub const HUB_REPO: &str = "I4cTime/focus";
-pub const BOARD_URL: &str = "https://github.com/users/I4cTime/projects/3";
+/// What the board commands answer when prefs.json has no usable `board`.
+pub const NOT_CONFIGURED: &str = "Board not configured";
 
 /// `board_fetch` without `force` returns a cached snapshot younger than this.
 const FRESH_SECS: i64 = 60;
@@ -725,11 +726,13 @@ pub struct Resolved {
 }
 
 /// Everything a board operation needs: the gh runner, the app data dir (for
-/// board.json) and the field list cached for the run.
+/// board.json), the field list cached for the run and the connected project.
 pub struct Ctx<'a> {
     pub gh: &'a Runner<'a>,
     pub dir: &'a Path,
     pub fields: &'a Mutex<Option<Vec<FieldDef>>>,
+    /// The connected project (prefs.json `board`).
+    pub config: &'a BoardConfig,
 }
 
 static FIELDS: Mutex<Option<Vec<FieldDef>>> = Mutex::new(None);
@@ -754,11 +757,15 @@ impl Ctx<'_> {
         if !force && let Some(f) = lock(self.fields).clone() {
             return Ok(f);
         }
-        let (data, _) = graphql(self.gh, &fields_query(), json!({ "id": PROJECT_ID }))?;
+        let (data, _) = graphql(
+            self.gh,
+            &fields_query(),
+            json!({ "id": self.config.project_id }),
+        )?;
         let fields = data
             .pointer("/node/fields")
             .map(parse_fields)
-            .ok_or_else(|| "the I4C project was not found".to_string())?;
+            .ok_or_else(|| self.config.not_found())?;
         self.store_fields(fields.clone());
         *fresh = true;
         Ok(fields)
@@ -851,13 +858,13 @@ impl Ctx<'_> {
                 "mutation($project: ID!, $item: ID!, $field: ID!, $value: ProjectV2FieldValue!) { \
 updateProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $field, value: $value }) { projectV2Item { id } } }",
                 "/updateProjectV2ItemFieldValue/projectV2Item/id",
-                json!({ "project": PROJECT_ID, "item": item_id, "field": r.field_id, "value": v }),
+                json!({ "project": self.config.project_id, "item": item_id, "field": r.field_id, "value": v }),
             ),
             None => (
                 "mutation($project: ID!, $item: ID!, $field: ID!) { \
 clearProjectV2ItemFieldValue(input: { projectId: $project, itemId: $item, fieldId: $field }) { projectV2Item { id } } }",
                 "/clearProjectV2ItemFieldValue/projectV2Item/id",
-                json!({ "project": PROJECT_ID, "item": item_id, "field": r.field_id }),
+                json!({ "project": self.config.project_id, "item": item_id, "field": r.field_id }),
             ),
         };
         let data = graphql_strict(self.gh, query, vars)?;
@@ -976,13 +983,17 @@ fn fetch_all(ctx: &Ctx) -> Result<(Vec<BoardItem>, Vec<FieldDef>), String> {
     let mut fields = Vec::new();
     let mut after: Option<String> = None;
     for page in 0..MAX_PAGES {
-        let (data, errors) = graphql(ctx.gh, &query, json!({ "id": PROJECT_ID, "after": after }))?;
+        let (data, errors) = graphql(
+            ctx.gh,
+            &query,
+            json!({ "id": ctx.config.project_id, "after": after }),
+        )?;
         let node =
             data.get("node")
                 .filter(|n| !n.is_null())
                 .ok_or_else(|| match errors.first() {
                     Some(e) => e.clone(),
-                    None => "the I4C project was not found".to_string(),
+                    None => ctx.config.not_found(),
                 })?;
         if page == 0 {
             fields = node.get("fields").map(parse_fields).unwrap_or_default();
@@ -1089,14 +1100,15 @@ child: repository(owner: $co, name: $cn) { issue(number: $ci) { id } } }",
 
 /// `gh project item-add` (idempotent) -> the item id.
 fn item_add(ctx: &Ctx, url: &str) -> Result<String, String> {
+    let number = ctx.config.project_number.to_string();
     let out = gh(
         ctx.gh,
         &[
             "project",
             "item-add",
-            PROJECT_NUMBER,
+            &number,
             "--owner",
-            OWNER,
+            &ctx.config.owner,
             "--url",
             url,
             "--format",
@@ -1174,13 +1186,13 @@ pub struct NewEpic {
     pub done_when: Option<String>,
 }
 
-/// Create an epic issue in the hub repo and add it to the board as an Epic.
+/// Create an epic issue in the configured hub repo and add it to the board as an Epic.
 pub fn create_epic(ctx: &Ctx, e: &NewEpic) -> Result<BoardItem, String> {
     let title = e.title.trim();
     if title.is_empty() {
         return Err("an epic needs a title".into());
     }
-    let (url, _) = issue_create(ctx, HUB_REPO, title, &e.body)?;
+    let (url, _) = issue_create(ctx, &ctx.config.hub_repo, title, &e.body)?;
     let after = |what: &str| {
         let url = url.clone();
         let what = what.to_owned();
@@ -1390,13 +1402,18 @@ fn md_cell(s: &str) -> String {
     if t.is_empty() { "-".into() } else { t }
 }
 
-/// The calendar layer as Markdown for `today` (local day).
+/// The calendar layer as Markdown for `today` (local day). Without a config
+/// the board is ignored: no task lines and no "Board:" link.
 pub fn render_schedule_md(
     board: Option<&BoardSnapshot>,
+    config: Option<&BoardConfig>,
     schedule: &Schedule,
     today: i64,
 ) -> String {
-    let items: &[BoardItem] = board.map(|b| b.items.as_slice()).unwrap_or_default();
+    let items: &[BoardItem] = match config {
+        Some(_) => board.map(|b| b.items.as_slice()).unwrap_or_default(),
+        None => &[],
+    };
     let ctx = MdContext {
         by_ref: items
             .iter()
@@ -1411,13 +1428,15 @@ pub fn render_schedule_md(
     }
     let tasks_on = |d: i64| sorted_tasks(by_date.get(&d).cloned().unwrap_or_default());
 
-    let mut out: Vec<String> = vec![
-        "# Schedule".into(),
-        format!(
-            "Generated by Kansei (Calendar panel) from the I4C board and the weekly rhythm; edit there, this file is overwritten. Board: {BOARD_URL}"
+    let header = match config {
+        Some(c) => format!(
+            "Generated by Kansei (Calendar panel) from the {} board and the weekly rhythm; edit there, this file is overwritten. Board: {}",
+            one_line(&c.title),
+            c.url.trim()
         ),
-        String::new(),
-    ];
+        None => "Generated by Kansei (Calendar panel) from the weekly rhythm; edit there, this file is overwritten.".into(),
+    };
+    let mut out: Vec<String> = vec!["# Schedule".into(), header, String::new()];
 
     // Today
     let (area, note, _) = schedule.plan(today);
@@ -1626,13 +1645,15 @@ pub fn ensure_schedule_import(dir: &Path, root: &Path) -> Result<bool, String> {
     Ok(amended)
 }
 
-/// Render SCHEDULE.md from the cached board and the schedule into `root`,
-/// writing only when the text changed; then the one-time CLAUDE.md import.
+/// Render SCHEDULE.md from the cached board (only with a config) and the
+/// schedule into `root`, writing only when the text changed; then the one-time
+/// CLAUDE.md import.
 pub fn render_into(dir: &Path, root: &Path, today: i64) -> Result<PathBuf, String> {
     let _g = lock(&RENDER_LOCK);
-    let board = read_cached(dir);
+    let config = read_config(dir);
+    let board = config.as_ref().and_then(|_| read_cached(dir));
     let schedule = read_schedule(dir)?;
-    let text = render_schedule_md(board.as_ref(), &schedule, today);
+    let text = render_schedule_md(board.as_ref(), config.as_ref(), &schedule, today);
     let path = root.join("SCHEDULE.md");
     if fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
         atomic_write(&path, text.as_bytes(), Some(0o644))
@@ -1764,14 +1785,232 @@ fn activity_projects(dir: &Path) -> Vec<(PathBuf, Option<PathBuf>)> {
 }
 
 // ---------------------------------------------------------------------------
+// Board configuration (prefs.json `board`)
+// ---------------------------------------------------------------------------
+
+/// The connected GitHub Project: what the user gave (owner, number, hub repo)
+/// and what `board_configure` resolved (node id, URL, title). Same shape as
+/// the front end's `prefs.board`.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardConfig {
+    /// GitHub user or organisation login.
+    pub owner: String,
+    pub project_number: u64,
+    /// "owner/name": where epics are created.
+    pub hub_repo: String,
+    /// `PVT_...`
+    pub project_id: String,
+    pub url: String,
+    pub title: String,
+}
+
+/// A GitHub login: letters, digits, `-`, `_` and `.` (as in a repo part).
+fn valid_login(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+impl BoardConfig {
+    /// The same rule as the front end's `sanitizePrefs`: every string
+    /// non-empty, a positive project number, `hubRepo` as owner/name.
+    pub fn is_valid(&self) -> bool {
+        [&self.owner, &self.project_id, &self.url, &self.title]
+            .iter()
+            .all(|s| !s.trim().is_empty())
+            && self.project_number > 0
+            && valid_repo(&self.hub_repo)
+    }
+
+    fn not_found(&self) -> String {
+        format!(
+            "project {} of {} was not found",
+            self.project_number, self.owner
+        )
+    }
+}
+
+/// The `board` key of `<dir>/prefs.json`, when present and valid.
+pub fn read_config(dir: &Path) -> Option<BoardConfig> {
+    let prefs: Value =
+        serde_json::from_str(&fs::read_to_string(dir.join("prefs.json")).ok()?).ok()?;
+    serde_json::from_value::<BoardConfig>(prefs.get("board")?.clone())
+        .ok()
+        .filter(BoardConfig::is_valid)
+}
+
+/// What `board_fetch` and `board_cached` answer without a config.
+pub fn not_configured() -> BoardSnapshot {
+    BoardSnapshot {
+        fetched_at: String::new(),
+        items: Vec::new(),
+        error: Some(NOT_CONFIGURED.into()),
+        areas: Vec::new(),
+    }
+}
+
+/// `board_cached`: the not-configured snapshot without a config, else board.json.
+pub fn cached_for(dir: &Path) -> Option<BoardSnapshot> {
+    match read_config(dir) {
+        None => Some(not_configured()),
+        Some(_) => read_cached(dir),
+    }
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardSetup {
+    pub config: BoardConfig,
+    /// Required fields the project lacks (or has with another type).
+    pub missing_fields: Vec<String>,
+    /// Field -> required option names it lacks.
+    pub missing_options: BTreeMap<String, Vec<String>>,
+}
+
+/// The fields the panels rely on: name, data type, required options.
+const REQUIRED_FIELDS: [(&str, &str, &[&str]); 5] = [
+    ("Status", "SINGLE_SELECT", &LANES),
+    ("Kind", "SINGLE_SELECT", &["Epic", "Task"]),
+    ("Area", "SINGLE_SELECT", &[]),
+    ("Scheduled", "DATE", &[]),
+    ("Order", "NUMBER", &[]),
+];
+
+/// Which required fields (and options) a project's field list lacks. Names
+/// match case-insensitively, as in `board_set_field`.
+pub fn check_fields(fields: &[FieldDef]) -> (Vec<String>, BTreeMap<String, Vec<String>>) {
+    let mut missing = Vec::new();
+    let mut options = BTreeMap::new();
+    for (name, ty, wanted) in REQUIRED_FIELDS {
+        let Some(f) = fields
+            .iter()
+            .find(|f| f.name.eq_ignore_ascii_case(name) && f.data_type.eq_ignore_ascii_case(ty))
+        else {
+            missing.push(name.to_owned());
+            continue;
+        };
+        let lacking: Vec<String> = wanted
+            .iter()
+            .filter(|w| !f.options.iter().any(|(_, n)| n.eq_ignore_ascii_case(w)))
+            .map(|w| (*w).to_owned())
+            .collect();
+        if !lacking.is_empty() {
+            options.insert(name.to_owned(), lacking);
+        }
+    }
+    (missing, options)
+}
+
+/// A Project v2 by owner and number: tried as a user's, then as an
+/// organisation's. Returns (node id, title, url) or the GitHub messages.
+pub fn resolve_project(
+    run: &Runner<'_>,
+    owner: &str,
+    number: u64,
+) -> Result<(String, String, String), String> {
+    let mut errors: Vec<String> = Vec::new();
+    for kind in ["user", "organization"] {
+        let query = format!(
+            "query($o: String!, $n: Int!) {{ {kind}(login: $o) {{ projectV2(number: $n) {{ id title url }} }} }}"
+        );
+        match graphql(run, &query, json!({ "o": owner, "n": number })) {
+            Ok((data, errs)) => {
+                let project = data
+                    .get(kind)
+                    .and_then(|o| o.get("projectV2"))
+                    .filter(|p| !p.is_null());
+                if let Some(p) = project {
+                    let field = |k: &str| p.get(k).and_then(str_of).unwrap_or_default();
+                    let id = field("id");
+                    if !id.is_empty() {
+                        return Ok((id, field("title"), field("url")));
+                    }
+                }
+                errors.extend(errs);
+            }
+            Err(e) => errors.push(e),
+        }
+    }
+    errors.dedup();
+    Err(if errors.is_empty() {
+        format!("no project {number} found for {owner}")
+    } else {
+        errors.join("; ")
+    })
+}
+
+/// `board_configure`: resolve the project, check its fields against the
+/// conventions, clear the per-run field cache and the old board.json (it may
+/// belong to another project). Missing fields are reported, not an error.
+pub fn configure(
+    run: &Runner<'_>,
+    dir: &Path,
+    fields_cache: &Mutex<Option<Vec<FieldDef>>>,
+    owner: &str,
+    project_number: u64,
+    hub_repo: &str,
+) -> Result<BoardSetup, String> {
+    let owner = owner.trim();
+    let hub_repo = hub_repo.trim();
+    if !valid_login(owner) {
+        return Err(format!("not a GitHub user or organisation: {owner}"));
+    }
+    if project_number == 0 {
+        return Err("the project number starts at 1".into());
+    }
+    if !valid_repo(hub_repo) {
+        return Err(format!("not an owner/name repository: {hub_repo}"));
+    }
+    let (project_id, title, url) = resolve_project(run, owner, project_number)?;
+    let (data, errors) = graphql(run, &fields_query(), json!({ "id": project_id }))?;
+    let fields = data
+        .pointer("/node/fields")
+        .map(parse_fields)
+        .ok_or_else(|| {
+            errors
+                .first()
+                .cloned()
+                .unwrap_or_else(|| "the project's fields could not be read".into())
+        })?;
+    let (missing_fields, missing_options) = check_fields(&fields);
+    *lock(fields_cache) = None;
+    {
+        let _g = lock(&CACHE_LOCK);
+        match fs::remove_file(dir.join("board.json")) {
+            Ok(()) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("cannot remove the old board.json: {e}")),
+        }
+    }
+    Ok(BoardSetup {
+        config: BoardConfig {
+            owner: owner.to_owned(),
+            project_number,
+            hub_repo: hub_repo.to_owned(),
+            project_id,
+            url,
+            title,
+        },
+        missing_fields,
+        missing_options,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
-fn real_ctx<T>(dir: &Path, f: impl FnOnce(&Ctx) -> T) -> T {
+fn configured(dir: &Path) -> Result<BoardConfig, String> {
+    read_config(dir).ok_or_else(|| NOT_CONFIGURED.to_string())
+}
+
+fn real_ctx<T>(dir: &Path, config: &BoardConfig, f: impl FnOnce(&Ctx) -> T) -> T {
     let ctx = Ctx {
         gh: &real_gh,
         dir,
         fields: &FIELDS,
+        config,
     };
     f(&ctx)
 }
@@ -1785,7 +2024,12 @@ pub async fn gh_status() -> Result<GhStatus, String> {
 pub async fn board_fetch(force: Option<bool>) -> Result<BoardSnapshot, String> {
     blocking(move || {
         let dir = app_data_dir()?;
-        let snap = real_ctx(&dir, |ctx| fetch(ctx, force.unwrap_or(false), now_secs()));
+        let Some(config) = read_config(&dir) else {
+            return Ok(not_configured());
+        };
+        let snap = real_ctx(&dir, &config, |ctx| {
+            fetch(ctx, force.unwrap_or(false), now_secs())
+        });
         if snap.error.is_none() {
             render_quietly(&dir);
         }
@@ -1796,7 +2040,7 @@ pub async fn board_fetch(force: Option<bool>) -> Result<BoardSnapshot, String> {
 
 #[tauri::command]
 pub async fn board_cached() -> Result<Option<BoardSnapshot>, String> {
-    blocking(|| Ok(read_cached(&app_data_dir()?))).await
+    blocking(|| Ok(cached_for(&app_data_dir()?))).await
 }
 
 #[tauri::command]
@@ -1807,7 +2051,8 @@ pub async fn board_set_field(
 ) -> Result<BoardItem, String> {
     blocking(move || {
         let dir = app_data_dir()?;
-        let item = real_ctx(&dir, |ctx| {
+        let config = configured(&dir)?;
+        let item = real_ctx(&dir, &config, |ctx| {
             set_field(ctx, &item_id, &field, &value.unwrap_or(Value::Null))
         })?;
         render_quietly(&dir);
@@ -1833,7 +2078,8 @@ pub async fn board_create_task(
             epic,
             scheduled,
         };
-        let item = real_ctx(&dir, |ctx| create_task(ctx, &t))?;
+        let config = configured(&dir)?;
+        let item = real_ctx(&dir, &config, |ctx| create_task(ctx, &t))?;
         render_quietly(&dir);
         Ok(item)
     })
@@ -1855,9 +2101,25 @@ pub async fn board_create_epic(
             area,
             done_when,
         };
-        let item = real_ctx(&dir, |ctx| create_epic(ctx, &e))?;
+        let config = configured(&dir)?;
+        let item = real_ctx(&dir, &config, |ctx| create_epic(ctx, &e))?;
         render_quietly(&dir);
         Ok(item)
+    })
+    .await
+}
+
+/// Resolve a GitHub Project and check its fields. The front end saves the
+/// returned config into prefs.json.
+#[tauri::command]
+pub async fn board_configure(
+    owner: String,
+    project_number: u64,
+    hub_repo: String,
+) -> Result<BoardSetup, String> {
+    blocking(move || {
+        let dir = app_data_dir()?;
+        configure(&real_gh, &dir, &FIELDS, &owner, project_number, &hub_repo)
     })
     .await
 }
@@ -1908,6 +2170,16 @@ pub async fn activity_days(from: String, to: String) -> Result<Vec<ActivityDay>,
 mod tests {
     use super::*;
     use std::sync::Mutex as StdMutex;
+
+    /// The project every test works against (no test uses real ids).
+    static CFG: LazyLock<BoardConfig> = LazyLock::new(|| BoardConfig {
+        owner: "acme".into(),
+        project_number: 7,
+        hub_repo: "acme/hub".into(),
+        project_id: "PVT_test".into(),
+        url: "https://github.com/users/acme/projects/7".into(),
+        title: "Plans".into(),
+    });
 
     fn d(s: &str) -> i64 {
         parse_date(s).unwrap()
@@ -2011,21 +2283,21 @@ mod tests {
                 { "__typename": "ProjectV2ItemFieldDateValue", "date": "2026-09-29", "field": { "name": "Started" } },
                 { "__typename": "ProjectV2ItemFieldTextValue", "text": "On Play", "field": { "name": "Done when" } }
               ] },
-              "content": { "__typename": "Issue", "number": 20, "title": "Aibou \u{2014} pet care", "url": "https://github.com/I4cTime/focus/issues/20",
-                "state": "OPEN", "closedAt": null, "repository": { "nameWithOwner": "I4cTime/focus" }, "parent": null,
+              "content": { "__typename": "Issue", "number": 20, "title": "Aibou \u{2014} pet care", "url": "https://github.com/acme/hub/issues/20",
+                "state": "OPEN", "closedAt": null, "repository": { "nameWithOwner": "acme/hub" }, "parent": null,
                 "subIssuesSummary": { "total": 7, "completed": 3 } } }),
             json!({ "id": "PVTI_task", "type": "ISSUE", "fieldValues": { "nodes": [
                 sv("Status", "Ready"), sv("Kind", "Task"),
                 { "__typename": "ProjectV2ItemFieldDateValue", "date": "2026-11-01", "field": { "name": "Scheduled" } },
                 { "__typename": "ProjectV2ItemFieldNumberValue", "number": 2.5, "field": { "name": "Order" } }
               ] },
-              "content": { "__typename": "Issue", "number": 12, "title": "Refund test", "url": "https://github.com/I4cTime/aibou/issues/12",
-                "state": "OPEN", "closedAt": null, "repository": { "nameWithOwner": "I4cTime/aibou" },
-                "parent": { "number": 20, "repository": { "nameWithOwner": "I4cTime/focus" } },
+              "content": { "__typename": "Issue", "number": 12, "title": "Refund test", "url": "https://github.com/acme/aibou/issues/12",
+                "state": "OPEN", "closedAt": null, "repository": { "nameWithOwner": "acme/aibou" },
+                "parent": { "number": 20, "repository": { "nameWithOwner": "acme/hub" } },
                 "subIssuesSummary": { "total": 0, "completed": 0 } } }),
             json!({ "id": "PVTI_pr", "type": "PULL_REQUEST", "fieldValues": { "nodes": [ sv("Status", "Done") ] },
-              "content": { "__typename": "PullRequest", "number": 5, "title": "Fix", "url": "https://github.com/I4cTime/niwa/pull/5",
-                "state": "MERGED", "closedAt": "2026-10-30T10:00:00Z", "repository": { "nameWithOwner": "I4cTime/niwa" } } }),
+              "content": { "__typename": "PullRequest", "number": 5, "title": "Fix", "url": "https://github.com/acme/niwa/pull/5",
+                "state": "MERGED", "closedAt": "2026-10-30T10:00:00Z", "repository": { "nameWithOwner": "acme/niwa" } } }),
             json!({ "id": "PVTI_draft", "type": "DRAFT_ISSUE", "fieldValues": { "nodes": [] },
               "content": { "__typename": "DraftIssue", "title": "An idea" } }),
             json!({ "id": "PVTI_hidden", "type": "REDACTED", "fieldValues": { "nodes": [] }, "content": null }),
@@ -2038,7 +2310,7 @@ mod tests {
         assert_eq!(items.len(), 3, "draft and redacted items are skipped");
         let epic = &items[0];
         assert_eq!(epic.item_id, "PVTI_epic");
-        assert_eq!((epic.repo.as_str(), epic.number), ("I4cTime/focus", 20));
+        assert_eq!((epic.repo.as_str(), epic.number), ("acme/hub", 20));
         assert_eq!(epic.state, "open");
         assert_eq!(epic.status.as_deref(), Some("In progress"));
         assert_eq!(epic.kind.as_deref(), Some("Epic"));
@@ -2061,7 +2333,7 @@ mod tests {
         assert_eq!(
             task.parent,
             Some(IssueRef {
-                repo: "I4cTime/focus".into(),
+                repo: "acme/hub".into(),
                 number: 20
             })
         );
@@ -2143,6 +2415,7 @@ mod tests {
             gh: &run,
             dir: tmp.path(),
             fields: &cache,
+            config: &CFG,
         };
         let now = 1_793_503_800;
 
@@ -2177,6 +2450,7 @@ mod tests {
             gh: &failing,
             dir: tmp.path(),
             fields: &cache,
+            config: &CFG,
         };
         let bad = fetch(&ctx2, true, now + 100);
         assert_eq!(bad.error.as_deref(), Some("HTTP 502"));
@@ -2192,6 +2466,7 @@ mod tests {
             gh: &missing,
             dir: empty.path(),
             fields: &cache,
+            config: &CFG,
         };
         let none = fetch(&ctx3, false, now);
         assert_eq!(none.fetched_at, "");
@@ -2220,6 +2495,7 @@ mod tests {
             gh: &run,
             dir: tmp.path(),
             fields: &cache,
+            config: &CFG,
         };
 
         let mut fresh = false;
@@ -2320,6 +2596,7 @@ mod tests {
             gh: &run,
             dir: tmp.path(),
             fields: &cache,
+            config: &CFG,
         };
         fetch(&ctx, true, 1_793_503_800);
         let before = fake.calls().len();
@@ -2339,7 +2616,7 @@ mod tests {
                 .unwrap()
                 .contains("updateProjectV2ItemFieldValue")
         );
-        assert_eq!(m["variables"]["project"], PROJECT_ID);
+        assert_eq!(m["variables"]["project"], "PVT_test");
         assert_eq!(m["variables"]["item"], "PVTI_task");
         assert_eq!(m["variables"]["field"], "F_STATUS");
         assert_eq!(
@@ -2386,6 +2663,7 @@ mod tests {
             gh: &run,
             dir: tmp.path(),
             fields: &cache,
+            config: &CFG,
         };
         ctx.set_value("I", "status", &json!("Ready")).unwrap();
         assert_eq!(
@@ -2401,7 +2679,7 @@ mod tests {
         let fake = Fake::new(|args, stdin| {
             if args[0] == "issue" {
                 return ok(
-                    "Creating issue in I4cTime/aibou\n\nhttps://github.com/I4cTime/aibou/issues/12\n",
+                    "Creating issue in acme/aibou\n\nhttps://github.com/acme/aibou/issues/12\n",
                 );
             }
             if args[0] == "project" {
@@ -2413,11 +2691,11 @@ mod tests {
             if q.contains("parent: repository") {
                 assert_eq!(
                     (v["po"].as_str(), v["pn"].as_str(), v["pi"].as_u64()),
-                    (Some("I4cTime"), Some("focus"), Some(20))
+                    (Some("acme"), Some("hub"), Some(20))
                 );
                 assert_eq!(
                     (v["co"].as_str(), v["cn"].as_str(), v["ci"].as_u64()),
-                    (Some("I4cTime"), Some("aibou"), Some(12))
+                    (Some("acme"), Some("aibou"), Some(12))
                 );
                 return ok(json!({ "data": { "parent": { "issue": { "id": "I_epic" } }, "child": { "issue": { "id": "I_new" } } } }).to_string());
             }
@@ -2448,13 +2726,14 @@ mod tests {
             gh: &run,
             dir: tmp.path(),
             fields: &cache,
+            config: &CFG,
         };
         let t = NewTask {
-            repo: "I4cTime/aibou".into(),
+            repo: "acme/aibou".into(),
             title: "--Refund test".into(),
             body: String::new(),
             epic: Some(IssueRef {
-                repo: "I4cTime/focus".into(),
+                repo: "acme/hub".into(),
                 number: 20,
             }),
             scheduled: Some("2026-11-01".into()),
@@ -2467,7 +2746,7 @@ mod tests {
             [
                 "issue",
                 "create",
-                "--repo=I4cTime/aibou",
+                "--repo=acme/aibou",
                 "--title=--Refund test",
                 "--body="
             ]
@@ -2477,11 +2756,11 @@ mod tests {
             [
                 "project",
                 "item-add",
-                "3",
+                "7",
                 "--owner",
-                "I4cTime",
+                "acme",
                 "--url",
-                "https://github.com/I4cTime/aibou/issues/12",
+                "https://github.com/acme/aibou/issues/12",
                 "--format",
                 "json"
             ]
@@ -2523,7 +2802,7 @@ mod tests {
             create_task(
                 &ctx,
                 &NewTask {
-                    repo: "I4cTime/aibou".into(),
+                    repo: "acme/aibou".into(),
                     title: " ".into(),
                     ..Default::default()
                 }
@@ -2534,7 +2813,7 @@ mod tests {
             create_task(
                 &ctx,
                 &NewTask {
-                    repo: "I4cTime/aibou".into(),
+                    repo: "acme/aibou".into(),
                     title: "x".into(),
                     scheduled: Some("soon".into()),
                     ..Default::default()
@@ -2550,7 +2829,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let fake = Fake::new(|args, _| {
             if args[0] == "issue" {
-                return ok("https://github.com/I4cTime/focus/issues/31\n");
+                return ok("https://github.com/acme/hub/issues/31\n");
             }
             GhOut {
                 ok: false,
@@ -2564,6 +2843,7 @@ mod tests {
             gh: &run,
             dir: tmp.path(),
             fields: &cache,
+            config: &CFG,
         };
         let e = create_epic(
             &ctx,
@@ -2575,9 +2855,9 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             e,
-            "created https://github.com/I4cTime/focus/issues/31, but adding it to the board failed: missing project scope"
+            "created https://github.com/acme/hub/issues/31, but adding it to the board failed: missing project scope"
         );
-        assert_eq!(fake.calls()[0].0[2], "--repo=I4cTime/focus");
+        assert_eq!(fake.calls()[0].0[2], "--repo=acme/hub");
     }
 
     #[test]
@@ -2596,13 +2876,13 @@ mod tests {
 
     #[test]
     fn parses_auth_status() {
-        let text = "github.com\n  \u{2713} Logged in to github.com account I4cTime (keyring)\n  - Active account: true\n  - Git operations protocol: https\n  - Token: gho_****\n  - Token scopes: 'gist', 'project', 'read:org', 'repo', 'workflow'\n";
+        let text = "github.com\n  \u{2713} Logged in to github.com account acme (keyring)\n  - Active account: true\n  - Git operations protocol: https\n  - Token: gho_****\n  - Token scopes: 'gist', 'project', 'read:org', 'repo', 'workflow'\n";
         let s = parse_auth_status(text, true);
         assert_eq!(
             s,
             GhStatus {
                 available: true,
-                login: Some("I4cTime".into()),
+                login: Some("acme".into()),
                 scopes: vec![
                     "gist".into(),
                     "project".into(),
@@ -2665,7 +2945,7 @@ mod tests {
         loose.scheduled = None;
         loose.status = Some("In progress".into());
         loose.parent = Some(IssueRef {
-            repo: "I4cTime/focus".into(),
+            repo: "acme/hub".into(),
             number: 99,
         });
         items.extend([later, far, loose]);
@@ -2679,15 +2959,20 @@ mod tests {
 
     #[test]
     fn renders_schedule_md_on_a_fixed_date() {
-        let md = render_schedule_md(Some(&sample_board()), &sample_schedule(), d("2026-11-01"));
+        let md = render_schedule_md(
+            Some(&sample_board()),
+            Some(&CFG),
+            &sample_schedule(),
+            d("2026-11-01"),
+        );
         let expected_start = "# Schedule\n\
-Generated by Kansei (Calendar panel) from the I4C board and the weekly rhythm; edit there, this file is overwritten. Board: https://github.com/users/I4cTime/projects/3\n\
+Generated by Kansei (Calendar panel) from the Plans board and the weekly rhythm; edit there, this file is overwritten. Board: https://github.com/users/acme/projects/7\n\
 \n\
 ## Today: 2026-11-01 Sunday\n\
 \n\
 Area: kansei\n\
 Note: Board - calendar\n\
-- I4cTime/aibou#12 Refund test (Ready; epic I4cTime/focus#20 Aibou - pet care)\n\
+- acme/aibou#12 Refund test (Ready; epic acme/hub#20 Aibou - pet care)\n\
 \n\
 ## This week: 2026-10-26 Monday to 2026-11-01 Sunday\n\
 \n\
@@ -2700,19 +2985,19 @@ nothing scheduled\n\
 ### 2026-10-28 Wednesday\n\
 nothing scheduled\n";
         assert!(md.starts_with(expected_start), "{md}");
-        assert!(md.contains("### 2026-11-01 Sunday (today)\nArea: kansei\nNote: Board - calendar\n- I4cTime/aibou#12"), "{md}");
-        assert!(md.contains("## Coming up (next 30 days)\n\n### 2026-11-10 Tuesday\n- I4cTime/aibou#13 Landing for Play (Ready; epic I4cTime/focus#20 Aibou - pet care)\n"), "{md}");
+        assert!(md.contains("### 2026-11-01 Sunday (today)\nArea: kansei\nNote: Board - calendar\n- acme/aibou#12"), "{md}");
+        assert!(md.contains("## Coming up (next 30 days)\n\n### 2026-11-10 Tuesday\n- acme/aibou#13 Landing for Play (Ready; epic acme/hub#20 Aibou - pet care)\n"), "{md}");
         assert!(!md.contains("2026-12-25"), "beyond 30 days");
         assert!(
             md.contains("| Monday | aibou | Play console |\n| Tuesday | none | - |"),
             "{md}"
         );
         assert!(md.contains("| Sunday | niwa | - |"));
-        assert!(md.ends_with("## Unscheduled\n\nOpen tasks in Ready or In progress without a date (propose one):\n- I4cTime/aibou#15 Pairing on two devices (In progress; epic I4cTime/focus#99)\n"), "{md}");
+        assert!(md.ends_with("## Unscheduled\n\nOpen tasks in Ready or In progress without a date (propose one):\n- acme/aibou#15 Pairing on two devices (In progress; epic acme/hub#99)\n"), "{md}");
         assert!(!md.contains('\u{2014}') && !md.contains('\u{2013}'));
 
         // No board yet, nothing planned.
-        let md = render_schedule_md(None, &Schedule::default(), d("2026-12-30"));
+        let md = render_schedule_md(None, Some(&CFG), &Schedule::default(), d("2026-12-30"));
         assert!(
             md.contains("## Today: 2026-12-30 Wednesday\n\nArea: none\nNothing scheduled.\n"),
             "{md}"
@@ -2871,17 +3156,335 @@ nothing scheduled\n";
         );
     }
 
-    /// Reads the real board through the real gh (read only). Run by hand:
+    // ---- board configuration --------------------------------------------
+
+    fn cfg_json() -> Value {
+        json!({
+            "owner": "acme", "projectNumber": 7, "hubRepo": "acme/hub",
+            "projectId": "PVT_test", "url": "https://github.com/users/acme/projects/7", "title": "Plans"
+        })
+    }
+
+    #[test]
+    fn reads_the_board_config_from_prefs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let write = |v: Value| fs::write(tmp.path().join("prefs.json"), v.to_string()).unwrap();
+        assert_eq!(read_config(tmp.path()), None, "no prefs.json");
+        write(json!({ "fontSize": 13, "board": cfg_json() }));
+        assert_eq!(read_config(tmp.path()).as_ref(), Some(&*CFG));
+        assert_eq!(
+            serde_json::to_value(&*CFG).unwrap(),
+            cfg_json(),
+            "camelCase, same shape as the pref"
+        );
+
+        write(json!({ "board": null }));
+        assert_eq!(read_config(tmp.path()), None);
+        write(json!({ "workspaceRoots": [] }));
+        assert_eq!(read_config(tmp.path()), None);
+        let bad = [
+            ("owner", json!("")),
+            ("owner", json!("  ")),
+            ("projectNumber", json!(0)),
+            ("projectNumber", json!(-3)),
+            ("projectNumber", json!(2.5)),
+            ("projectNumber", json!("7")),
+            ("hubRepo", json!("hub")),
+            ("hubRepo", json!("acme/hub/x")),
+            ("hubRepo", json!("acme/h b")),
+            ("projectId", json!("")),
+            ("url", json!(null)),
+            ("title", json!(5)),
+        ];
+        for (k, v) in bad {
+            let mut b = cfg_json();
+            b[k] = v.clone();
+            write(json!({ "board": b }));
+            assert_eq!(read_config(tmp.path()), None, "{k} = {v}");
+        }
+        let mut b = cfg_json();
+        b.as_object_mut().unwrap().remove("title");
+        write(json!({ "board": b }));
+        assert_eq!(read_config(tmp.path()), None, "a missing key");
+        fs::write(tmp.path().join("prefs.json"), "{ broken").unwrap();
+        assert_eq!(read_config(tmp.path()), None);
+    }
+
+    #[test]
+    fn without_a_config_the_board_reports_not_configured() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_cache(tmp.path(), &sample_board()).unwrap();
+        let none = cached_for(tmp.path()).unwrap();
+        assert_eq!(none, not_configured());
+        assert_eq!(none.fetched_at, "");
+        assert!(none.items.is_empty());
+        assert_eq!(none.error.as_deref(), Some("Board not configured"));
+        assert_eq!(configured(tmp.path()), Err("Board not configured".into()));
+
+        fs::write(
+            tmp.path().join("prefs.json"),
+            json!({ "board": cfg_json() }).to_string(),
+        )
+        .unwrap();
+        assert_eq!(cached_for(tmp.path()), Some(sample_board()));
+        assert_eq!(configured(tmp.path()).as_ref(), Ok(&*CFG));
+    }
+
+    #[test]
+    fn schedule_md_without_a_config_has_no_tasks_and_no_board_link() {
+        let md = render_schedule_md(
+            Some(&sample_board()),
+            None,
+            &sample_schedule(),
+            d("2026-11-01"),
+        );
+        assert!(md.starts_with("# Schedule\nGenerated by Kansei (Calendar panel) from the weekly rhythm; edit there, this file is overwritten.\n\n## Today: 2026-11-01 Sunday\n\nArea: kansei\nNote: Board - calendar\nNothing scheduled.\n"), "{md}");
+        assert!(!md.contains("Board:"), "{md}");
+        assert!(!md.contains("acme/"), "no task lines: {md}");
+        assert!(md.contains("| Monday | aibou | Play console |"), "{md}");
+
+        // render_into: the board.json of an old project is ignored without a config.
+        let data = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        write_cache(data.path(), &sample_board()).unwrap();
+        write_schedule(data.path(), sample_schedule()).unwrap();
+        let path = render_into(data.path(), root.path(), d("2026-11-01")).unwrap();
+        let text = fs::read_to_string(path).unwrap();
+        assert!(!text.contains("acme/aibou#12"), "{text}");
+        fs::write(
+            data.path().join("prefs.json"),
+            json!({ "board": cfg_json() }).to_string(),
+        )
+        .unwrap();
+        let path = render_into(data.path(), root.path(), d("2026-11-01")).unwrap();
+        let text = fs::read_to_string(path).unwrap();
+        assert!(text.contains("acme/aibou#12"), "{text}");
+        assert!(text.contains("Board: https://github.com/users/acme/projects/7"));
+    }
+
+    fn field(name: &str, ty: &str, options: &[&str]) -> FieldDef {
+        FieldDef {
+            id: format!("F_{name}"),
+            name: name.into(),
+            data_type: ty.into(),
+            options: options
+                .iter()
+                .map(|o| (format!("o-{o}"), (*o).to_owned()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn detects_missing_fields_and_options() {
+        let (fields, options) = check_fields(&parse_fields(&fields_json(None)));
+        assert!(fields.is_empty(), "{fields:?}");
+        assert!(options.is_empty(), "{options:?}");
+
+        let defs = vec![
+            field("Title", "TITLE", &[]),
+            // Lower case names and options still count.
+            field(
+                "status",
+                "SINGLE_SELECT",
+                &["backlog", "Ready", "In progress", "Done", "Icebox"],
+            ),
+            field("Kind", "SINGLE_SELECT", &["Epic"]),
+            field("Area", "SINGLE_SELECT", &[]),
+            // Scheduled with the wrong type is as good as missing.
+            field("Scheduled", "TEXT", &[]),
+            field("Target", "DATE", &[]),
+        ];
+        let (fields, options) = check_fields(&defs);
+        assert_eq!(fields, vec!["Scheduled", "Order"]);
+        assert_eq!(
+            options,
+            BTreeMap::from([
+                ("Kind".to_owned(), vec!["Task".to_owned()]),
+                ("Status".to_owned(), vec!["In review".to_owned()]),
+            ])
+        );
+
+        let (fields, options) = check_fields(&[]);
+        assert_eq!(fields, vec!["Status", "Kind", "Area", "Scheduled", "Order"]);
+        assert!(options.is_empty());
+    }
+
+    /// A fake GitHub with one user (`acme`, project 7) and one organisation
+    /// (`acme-org`, project 2, without an Order field).
+    fn owners_fake() -> Fake {
+        Fake::new(|args, stdin| {
+            assert_eq!(&args[..2], &["api", "graphql"]);
+            let body = body_of(stdin);
+            let q = body["query"].as_str().unwrap();
+            let v = &body["variables"];
+            let (o, n) = (v["o"].as_str().unwrap_or(""), v["n"].as_u64().unwrap_or(0));
+            if q.contains("user(login: $o)") {
+                return match (o, n) {
+                    ("acme", 7) => ok(json!({ "data": { "user": { "projectV2": {
+                        "id": "PVT_test", "title": "Plans", "url": "https://github.com/users/acme/projects/7" } } } }).to_string()),
+                    ("acme", _) => GhOut { ok: false, stdout: json!({ "data": { "user": { "projectV2": null } },
+                        "errors": [{ "message": format!("Could not resolve to a ProjectV2 with the number {n}.") }] }).to_string(), stderr: String::new() },
+                    _ => GhOut { ok: false, stdout: json!({ "data": { "user": null },
+                        "errors": [{ "message": format!("Could not resolve to a User with the login of '{o}'.") }] }).to_string(), stderr: String::new() },
+                };
+            }
+            if q.contains("organization(login: $o)") {
+                return match (o, n) {
+                    ("acme-org", 2) => ok(json!({ "data": { "organization": { "projectV2": {
+                        "id": "PVT_org", "title": "Roadmap", "url": "https://github.com/orgs/acme-org/projects/2" } } } }).to_string()),
+                    _ => GhOut { ok: false, stdout: json!({ "data": { "organization": null },
+                        "errors": [{ "message": format!("Could not resolve to an Organization with the login of '{o}'.") }] }).to_string(), stderr: String::new() },
+                };
+            }
+            if q.contains("fields(first: 50)") {
+                let mut fields = fields_json(None);
+                if v["id"] == "PVT_org" {
+                    fields["nodes"]
+                        .as_array_mut()
+                        .unwrap()
+                        .retain(|f| f["name"] != "Order");
+                }
+                return ok(json!({ "data": { "node": { "fields": fields } } }).to_string());
+            }
+            panic!("unexpected query {q}");
+        })
+    }
+
+    #[test]
+    fn resolves_user_then_organisation_projects() {
+        let fake = owners_fake();
+        let run = |a: &[&str], s: Option<&str>| fake.run(a, s);
+        assert_eq!(
+            resolve_project(&run, "acme", 7),
+            Ok((
+                "PVT_test".into(),
+                "Plans".into(),
+                "https://github.com/users/acme/projects/7".into()
+            ))
+        );
+        assert_eq!(fake.calls().len(), 1, "a user's project needs one query");
+
+        assert_eq!(
+            resolve_project(&run, "acme-org", 2),
+            Ok((
+                "PVT_org".into(),
+                "Roadmap".into(),
+                "https://github.com/orgs/acme-org/projects/2".into()
+            ))
+        );
+        assert_eq!(fake.calls().len(), 3, "user first, then organization");
+
+        let e = resolve_project(&run, "nobody", 1).unwrap_err();
+        assert_eq!(
+            e,
+            "Could not resolve to a User with the login of 'nobody'.; Could not resolve to an Organization with the login of 'nobody'."
+        );
+        let e = resolve_project(&run, "acme", 9).unwrap_err();
+        assert!(
+            e.starts_with("Could not resolve to a ProjectV2 with the number 9."),
+            "{e}"
+        );
+
+        let missing = |_: &[&str], _: Option<&str>| -> io::Result<GhOut> {
+            Err(io::Error::from(io::ErrorKind::NotFound))
+        };
+        assert_eq!(
+            resolve_project(&missing, "acme", 7),
+            Err("gh is not installed (or not on PATH)".into()),
+            "the same error twice is said once"
+        );
+    }
+
+    #[test]
+    fn configure_resolves_checks_and_clears_the_caches() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fake = owners_fake();
+        let run = |a: &[&str], s: Option<&str>| fake.run(a, s);
+        let cache = Mutex::new(Some(parse_fields(&fields_json(None))));
+        write_cache(tmp.path(), &sample_board()).unwrap();
+
+        let setup = configure(&run, tmp.path(), &cache, " acme ", 7, " acme/hub ").unwrap();
+        assert_eq!(setup.config, *CFG);
+        assert!(setup.missing_fields.is_empty());
+        assert!(setup.missing_options.is_empty());
+        assert!(
+            cache.lock().unwrap().is_none(),
+            "the field cache is cleared"
+        );
+        assert!(
+            !tmp.path().join("board.json").exists(),
+            "the old board is dropped"
+        );
+        let json = serde_json::to_value(&setup).unwrap();
+        assert_eq!(json["config"], cfg_json());
+        assert_eq!(json["missingFields"], json!([]));
+        assert_eq!(json["missingOptions"], json!({}));
+
+        // An organisation's project without Order: reported, not an error.
+        let setup = configure(&run, tmp.path(), &cache, "acme-org", 2, "acme-org/plans").unwrap();
+        assert_eq!(setup.config.project_id, "PVT_org");
+        assert_eq!(setup.config.title, "Roadmap");
+        assert_eq!(setup.missing_fields, vec!["Order"]);
+
+        // Not found: the gh message.
+        let e = configure(&run, tmp.path(), &cache, "acme", 9, "acme/hub").unwrap_err();
+        assert!(e.contains("ProjectV2 with the number 9"), "{e}");
+
+        // Bad input never reaches gh.
+        let before = fake.calls().len();
+        assert!(configure(&run, tmp.path(), &cache, "", 7, "acme/hub").is_err());
+        assert!(configure(&run, tmp.path(), &cache, "ac me", 7, "acme/hub").is_err());
+        assert!(configure(&run, tmp.path(), &cache, "acme", 0, "acme/hub").is_err());
+        assert!(configure(&run, tmp.path(), &cache, "acme", 7, "hub").is_err());
+        assert_eq!(fake.calls().len(), before);
+    }
+
+    #[test]
+    fn writes_use_the_configured_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fake = board_fake(fields_json(None));
+        let run = |a: &[&str], s: Option<&str>| fake.run(a, s);
+        let cache = Mutex::new(None);
+        let other = BoardConfig {
+            owner: "beta".into(),
+            project_number: 12,
+            hub_repo: "beta/goals".into(),
+            project_id: "PVT_beta".into(),
+            url: "https://github.com/orgs/beta/projects/12".into(),
+            title: "Goals".into(),
+        };
+        let ctx = Ctx {
+            gh: &run,
+            dir: tmp.path(),
+            fields: &cache,
+            config: &other,
+        };
+        fetch(&ctx, true, 1_793_503_800);
+        let first = body_of(fake.calls()[0].1.as_deref());
+        assert_eq!(first["variables"]["id"], "PVT_beta");
+        set_field(&ctx, "PVTI_task", "status", &json!("Ready")).unwrap();
+        let calls = fake.calls();
+        let m = body_of(calls[calls.len() - 2].1.as_deref());
+        assert_eq!(m["variables"]["project"], "PVT_beta");
+    }
+
+    /// Reads the configured board (prefs.json `board`) through the real gh
+    /// (read only). Run by hand:
     /// `cargo test live_board_read -- --ignored --nocapture`.
     #[test]
     #[ignore]
     fn live_board_read() {
         let tmp = tempfile::tempdir().unwrap();
         let cache = Mutex::new(None);
+        let Some(config) = read_config(&app_data_dir().unwrap()) else {
+            println!("no board configured in prefs.json; nothing to read");
+            return;
+        };
         let ctx = Ctx {
             gh: &real_gh,
             dir: tmp.path(),
             fields: &cache,
+            config: &config,
         };
         println!("{:?}", status_with(&real_gh));
         let snap = fetch(&ctx, true, now_secs());
@@ -2889,7 +3492,12 @@ nothing scheduled\n";
         println!("{} items, areas {:?}", snap.items.len(), snap.areas);
         let epics = snap.items.iter().filter(|i| i.is_epic()).count();
         println!("{epics} epics; first: {:?}", snap.items.first());
-        let md = render_schedule_md(Some(&snap), &Schedule::default(), local_today());
+        let md = render_schedule_md(
+            Some(&snap),
+            Some(&config),
+            &Schedule::default(),
+            local_today(),
+        );
         println!("{md}");
     }
 }

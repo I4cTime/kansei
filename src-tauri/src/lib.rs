@@ -62,6 +62,7 @@ pub fn run() {
             board::board_set_field,
             board::board_create_task,
             board::board_create_epic,
+            board::board_configure,
             board::schedule_read,
             board::schedule_write,
             board::schedule_render,

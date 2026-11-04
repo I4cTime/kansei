@@ -118,7 +118,7 @@ describe("today's plan", () => {
 
 describe("tasks and activity per day", () => {
   const item = (n: number, status: BoardItem["status"], scheduled: string | null, title = `t${n}`): BoardItem => ({
-    itemId: `I${n}`, number: n, repo: "I4cTime/aibou", title, url: "", state: "open", closedAt: null, isPr: false, status, kind: "Task",
+    itemId: `I${n}`, number: n, repo: "acme/aibou", title, url: "", state: "open", closedAt: null, isPr: false, status, kind: "Task",
     area: null, scheduled, started: null, target: null, order: null, doneWhen: null, outcome: null, parent: null, subIssues: { total: 0, completed: 0 },
   });
 

@@ -14,7 +14,9 @@ import { basename } from "../shared/paths";
 import { plural } from "../shared/format";
 import { AsOf, BoardNotice, useNow } from "../board/BoardPanel";
 import { refreshBoard, setItemField } from "../board/actions";
-import { areaOptions, boardLoadingAtom, itemChip, snapshotAtom } from "../board/model";
+import { areaOptions, boardConfigAtom, boardLoadingAtom, itemChip, projectNames, snapshotAtom } from "../board/model";
+import { NoBoardLine } from "../board/BoardConnect";
+import { treeAtom } from "../projects/workspaceStore";
 import { StatusDot } from "../board/StatusDot";
 import {
   WEEKDAY_SHORT,
@@ -117,7 +119,11 @@ function ActivityStrip({ list, home, compact }: { list: DayActivity | undefined;
 
 export function CalendarPanel() {
   const toast = useToast();
-  const snap = useAtomValue(snapshotAtom);
+  const config = useAtomValue(boardConfigAtom);
+  // Without a connected project the plan layer works alone: no board tasks.
+  const boardSnap = useAtomValue(snapshotAtom);
+  const snap = config ? boardSnap : null;
+  const tree = useAtomValue(treeAtom);
   const schedule = useAtomValue(scheduleAtom);
   const today = useAtomValue(todayAtom);
   const loading = useAtomValue(boardLoadingAtom);
@@ -130,8 +136,13 @@ export function CalendarPanel() {
 
   const items = useMemo(() => snap?.items ?? [], [snap]);
   const areas = useMemo(
-    () => areaOptions(snap, [...Object.values(schedule?.rhythm ?? {}), ...Object.values(schedule?.overrides ?? {})].map((p) => p.area)),
-    [snap, schedule],
+    () =>
+      areaOptions(
+        snap,
+        [...Object.values(schedule?.rhythm ?? {}), ...Object.values(schedule?.overrides ?? {})].map((p) => p.area),
+        projectNames(tree ?? []),
+      ),
+    [snap, schedule, tree],
   );
   const month = monthOf(anchor);
   const weeks = useMemo(() => (view === "week" ? [weekGrid(anchor)] : monthGrid(monthOf(anchor))), [view, anchor]);
@@ -187,7 +198,7 @@ export function CalendarPanel() {
       }}
       actions={
         <>
-          <AsOf fetchedAt={snap?.fetchedAt} now={now} />
+          {config && <AsOf fetchedAt={snap?.fetchedAt} now={now} />}
           <IconButton icon={Repeat} title="Weekly rhythm" onClick={openRhythm} />
         </>
       }
@@ -265,25 +276,31 @@ export function CalendarPanel() {
         </div>
       )}
 
-      <SectionHeader title="Unscheduled" count={loose.length} />
-      {loose.length === 0 ? (
-        <EmptyState title="Nothing waiting for a date">Open tasks in Ready or In progress without a Scheduled date show here.</EmptyState>
+      {!config ? (
+        <NoBoardLine className="px-3 pt-2" />
       ) : (
         <>
-          <p className="px-3 pb-1 text-[11px] text-fg-muted">Drag a task onto a day to schedule it.</p>
-          {loose.map((t) => (
-            <div
-              key={t.itemId}
-              {...handlers(t)}
-              data-drag-task={t.itemId}
-              className={cx("flex min-w-0 cursor-grab items-center gap-1.5 px-3 py-1 select-none hover:bg-bg-hover", drag?.item.itemId === t.itemId && "opacity-50")}
-              title={`${t.repo}#${t.number} ${t.title}`}
-            >
-              <StatusDot item={t} />
-              <span className="min-w-0 flex-1 truncate text-xs text-fg">{t.title}</span>
-              {itemChip(t) && <Badge>{itemChip(t)}</Badge>}
-            </div>
-          ))}
+          <SectionHeader title="Unscheduled" count={loose.length} />
+          {loose.length === 0 ? (
+            <EmptyState title="Nothing waiting for a date">Open tasks in Ready or In progress without a Scheduled date show here.</EmptyState>
+          ) : (
+            <>
+              <p className="px-3 pb-1 text-[11px] text-fg-muted">Drag a task onto a day to schedule it.</p>
+              {loose.map((t) => (
+                <div
+                  key={t.itemId}
+                  {...handlers(t)}
+                  data-drag-task={t.itemId}
+                  className={cx("flex min-w-0 cursor-grab items-center gap-1.5 px-3 py-1 select-none hover:bg-bg-hover", drag?.item.itemId === t.itemId && "opacity-50")}
+                  title={`${t.repo}#${t.number} ${t.title}`}
+                >
+                  <StatusDot item={t} />
+                  <span className="min-w-0 flex-1 truncate text-xs text-fg">{t.title}</span>
+                  {itemChip(t, config.hubRepo) && <Badge>{itemChip(t, config.hubRepo)}</Badge>}
+                </div>
+              ))}
+            </>
+          )}
         </>
       )}
       <div className="h-3" />

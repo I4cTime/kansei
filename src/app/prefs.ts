@@ -23,6 +23,9 @@
 //   workspaceRoots:   string[]             folders the Projects tree scans (default [~/Develop] when it exists)
 //   collapsedPaths:   string[]             tree roots and groups the user collapsed (default: expanded)
 //   expandedPaths:    string[]             tree projects whose subprojects the user expanded (default: collapsed)
+//   board:            BoardConfig | null   the connected GitHub Project (owner, projectNumber, hubRepo and
+//                                          the resolved projectId, url, title); null = not configured.
+//                                          Set by Connect (board_configure), read by Rust per board call
 //
 // Usage from a panel:
 //   const prefs = useAtomValue(prefsAtom);
@@ -31,7 +34,7 @@
 // persists every change after a short debounce. Terminals pick up font and theme
 // changes live.
 import { atom } from "jotai";
-import { files, projects } from "../lib/ipc";
+import { files, projects, type BoardConfig } from "../lib/ipc";
 import { debounce, getPaths, joinPath, store, toastError } from "./store";
 import { findPreset } from "./theme/presets";
 
@@ -56,6 +59,7 @@ export type Prefs = {
   workspaceRoots: string[];
   collapsedPaths: string[];
   expandedPaths: string[];
+  board: BoardConfig | null;
 };
 
 export const SIDEBAR_DEFAULT = 300;
@@ -80,6 +84,7 @@ export const DEFAULT_PREFS: Prefs = {
   workspaceRoots: [],
   collapsedPaths: [],
   expandedPaths: [],
+  board: null,
 };
 
 export const prefsAtom = atom<Prefs>(DEFAULT_PREFS);
@@ -117,6 +122,25 @@ function sanitizeTheme(v: unknown, fallback: ThemePref): ThemePref {
   return fallback;
 }
 
+const HUB_REPO_RE = /^[\w.-]+\/[\w.-]+$/;
+
+/** A complete board config: every string non-empty, a positive integer project number, hubRepo as owner/name. */
+export function sanitizeBoard(v: unknown): BoardConfig | null {
+  if (!v || typeof v !== "object") return null;
+  const r = v as Record<string, unknown>;
+  const str = (x: unknown) => (typeof x === "string" && x.trim() ? x.trim() : null);
+  const owner = str(r.owner);
+  const hubRepo = str(r.hubRepo);
+  const projectId = str(r.projectId);
+  const url = str(r.url);
+  const title = str(r.title);
+  const n = r.projectNumber;
+  if (!owner || !hubRepo || !projectId || !url || !title) return null;
+  if (typeof n !== "number" || !Number.isInteger(n) || n <= 0) return null;
+  if (!HUB_REPO_RE.test(hubRepo)) return null;
+  return { owner, projectNumber: n, hubRepo, projectId, url, title };
+}
+
 /** Coerce unknown JSON into a valid Prefs, falling back to defaults per field. */
 export function sanitizePrefs(raw: unknown): Prefs {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -141,6 +165,7 @@ export function sanitizePrefs(raw: unknown): Prefs {
     workspaceRoots: folderList(r.workspaceRoots, d.workspaceRoots),
     collapsedPaths: stringList(r.collapsedPaths, d.collapsedPaths),
     expandedPaths: stringList(r.expandedPaths, d.expandedPaths),
+    board: sanitizeBoard(r.board),
   };
 }
 

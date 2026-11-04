@@ -45,7 +45,10 @@ export function installDriver() {
     invoke,
     listen,
     ipc: { pty, files, memory, mcp, projects: projectsIpc, sessions: sessionsIpc, project: projectIpc, workspace: workspaceIpc, board: boardIpc, schedule: scheduleIpc },
-    /** Board atoms and pure helpers (snapshotAtom, ghStatusAtom, laneGroups, areaProject...) and its actions (refreshBoard, setItemField: writes to GitHub). */
+    /**
+     * Board atoms and pure helpers (boardConfigAtom, snapshotAtom, ghStatusAtom, laneGroups, areaProject...) and its
+     * actions (configureBoard, disconnectBoard, refreshBoard, setItemField: writes to GitHub).
+     */
     board: { ...boardModel, ...boardActions },
     /** Calendar atoms and helpers (scheduleAtom, todayAtom, weekGrid, monthGrid, dayPlan...) and loadSchedule / saveSchedule. */
     calendar: { ...calendarModel, ...calendarActions },
