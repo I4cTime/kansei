@@ -38,8 +38,13 @@ const AGENTS_EVERY: Duration = Duration::from_secs(4);
 const AGENTS_TIMEOUT: Duration = Duration::from_secs(3);
 /// Parent levels walked from a session pid to a tab pid.
 const MAX_WALK: usize = 12;
-/// Bytes read from the end of a transcript.
+/// Bytes read from the end of a transcript first.
 const TAIL_BYTES: u64 = 64 * 1024;
+/// Without a usage line in the first tail, the window grows to these sizes
+/// (one large tool result or attachment line can push the last assistant line
+/// out of 64 KB); it stops once it reaches back past the previous size, whose
+/// bytes were already looked at.
+const TAIL_STEPS: [u64; 3] = [TAIL_BYTES, 256 * 1024, 1024 * 1024];
 /// When the encoded-dir guess misses and the search found nothing (a new
 /// session without a transcript yet), search again after this.
 const SEARCH_RETRY: Duration = Duration::from_secs(30);
@@ -79,6 +84,8 @@ struct SessionFile {
     session_id: Option<String>,
     cwd: Option<String>,
     status: Option<String>,
+    /// Newer Claude Code versions write `waiting` here with a reason.
+    waiting_for: Option<String>,
     status_updated_at: Option<i64>,
     updated_at: Option<i64>,
     proc_start: Option<String>,
@@ -181,14 +188,32 @@ pub fn usage_from_tail(tail: &str) -> Option<Context> {
     None
 }
 
-/// The last `TAIL_BYTES` of a file, lossily decoded.
-fn read_tail(path: &Path, len: u64) -> Option<String> {
+/// The last `bytes` of a file of length `len`, lossily decoded.
+fn read_tail(path: &Path, len: u64, bytes: u64) -> Option<String> {
     let mut f = fs::File::open(path).ok()?;
-    let from = len.saturating_sub(TAIL_BYTES);
+    let from = len.saturating_sub(bytes);
     f.seek(SeekFrom::Start(from)).ok()?;
     let mut buf = Vec::with_capacity((len - from) as usize);
-    f.take(TAIL_BYTES).read_to_end(&mut buf).ok()?;
+    f.take(len - from).read_to_end(&mut buf).ok()?;
     Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
+/// The usage in the last 64 KB, else in a growing tail (`TAIL_STEPS`) that
+/// stops once it covers the whole file or reaches back before `prev_len`.
+fn usage_from_file(path: &Path, len: u64, prev_len: Option<u64>) -> Option<Context> {
+    for bytes in TAIL_STEPS {
+        if let Some(ctx) = read_tail(path, len, bytes)
+            .as_deref()
+            .and_then(usage_from_tail)
+        {
+            return Some(ctx);
+        }
+        let from = len.saturating_sub(bytes);
+        if from == 0 || prev_len.is_some_and(|p| from < p) {
+            break;
+        }
+    }
+    None
 }
 
 #[derive(Default)]
@@ -241,9 +266,11 @@ impl Transcript {
         if self.size == Some(len) {
             return;
         }
+        // A shrunk file (rewritten) is read as new.
+        let prev = self.size.filter(|&p| p <= len);
         self.size = Some(len);
         // No usage line in the tail: keep the previous value.
-        if let Some(ctx) = read_tail(path, len).as_deref().and_then(usage_from_tail) {
+        if let Some(ctx) = usage_from_file(path, len, prev) {
             self.context = Some(ctx);
         }
     }
@@ -577,7 +604,11 @@ impl Poller {
         for m in &matched {
             let status_updated_at = m.file.status_updated_at.or(m.file.updated_at).unwrap_or(0);
             let mut status = normal_status(m.file.status.as_deref()).to_owned();
-            let mut waiting_for = None;
+            let mut waiting_for = if status == "waiting" {
+                m.file.waiting_for.clone().filter(|s| !s.is_empty())
+            } else {
+                None
+            };
             // A `waiting` entry overrides the file's `busy`, unless the file
             // changed after that run started.
             if status == "busy"
@@ -884,7 +915,7 @@ mod tests {
     }
 
     #[test]
-    fn transcript_tail_reads_only_the_end_and_keeps_old_values() {
+    fn transcript_usage_updates_and_keeps_old_values() {
         let tmp = tempfile::tempdir().unwrap();
         let projects = tmp.path().join("projects");
         let dir = projects.join(crate::memory::encode("/work/proj"));
@@ -905,7 +936,8 @@ mod tests {
         let mut t = Transcript::default();
         t.refresh(&projects, Some("/work/proj"), S1);
         assert_eq!(t.path.as_deref(), Some(file.as_path()));
-        assert_eq!(t.context, None);
+        // Not in the last 64 KB: the first read grows its window to find it.
+        assert_eq!(t.context.as_ref().map(|c| c.tokens), Some(3));
 
         text.push_str(&assistant((10, 20, 30), "m1"));
         text.push('\n');
@@ -919,6 +951,38 @@ mod tests {
         fs::write(&file, &text).unwrap();
         t.refresh(&projects, Some("/work/proj"), S1);
         assert_eq!(t.context.as_ref().map(|c| c.tokens), Some(60));
+    }
+
+    #[test]
+    fn transcript_tail_grows_past_one_large_line() {
+        let tmp = tempfile::tempdir().unwrap();
+        let projects = tmp.path().join("projects");
+        let dir = projects.join(crate::memory::encode("/w"));
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join(format!("{S1}.jsonl"));
+        // Like a real first turn: the reply, then a 140 KB attachment line.
+        let big = format!(
+            r#"{{"type":"attachment","content":"{}"}}"#,
+            "y".repeat(140_000)
+        );
+        let mut text = assistant((2, 57255, 29137), "claude-fable-5-1") + "\n" + &big + "\n";
+        fs::write(&file, &text).unwrap();
+        let mut t = Transcript::default();
+        t.refresh(&projects, Some("/w"), S1);
+        assert_eq!(t.context.as_ref().map(|c| c.tokens), Some(86394));
+
+        // A later growth only looks back to the previous size: an old usage
+        // line beyond the first tail is not re-read, the value is kept.
+        fs::write(&file, assistant((1, 1, 1), "early") + "\n" + &big + "\n").unwrap();
+        let mut t = Transcript {
+            size: Some(fs::metadata(&file).unwrap().len()),
+            ..Transcript::default()
+        };
+        text = fs::read_to_string(&file).unwrap() + &big + "\n";
+        fs::write(&file, &text).unwrap();
+        t.path = Some(file.clone());
+        t.refresh(&projects, Some("/w"), S1);
+        assert_eq!(t.context, None);
     }
 
     #[test]
@@ -1097,6 +1161,18 @@ mod tests {
         });
         assert_eq!(asked, vec![false]);
         assert_eq!(list[0].status, "idle");
+
+        // The file itself can say waiting, with a reason.
+        fs::write(
+            f.sessions.join("210.json"),
+            format!(
+                r#"{{"pid":210,"sessionId":"{S2}","procStart":"21","status":"waiting","waitingFor":"input needed","statusUpdatedAt":950}}"#
+            ),
+        )
+        .unwrap();
+        let list = f.poller.poll(&tabs, &mut |_| None);
+        assert_eq!(list[1].status, "waiting");
+        assert_eq!(list[1].waiting_for.as_deref(), Some("input needed"));
 
         // No tabs: nothing, and agents is told nothing is busy.
         let mut asked = Vec::new();

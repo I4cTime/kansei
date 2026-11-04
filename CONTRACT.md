@@ -1138,7 +1138,9 @@ type TabActivity = {
 Sources, in order of precedence:
 
 1. `~/.claude/sessions/<pid>.json` (internal format, read already by
-   `sessions.rs`): `status` is `busy` or `idle`, with `statusUpdatedAt`. The
+   `sessions.rs`): `status` is `busy` or `idle`, with `statusUpdatedAt`
+   (Claude Code 2.1.305 also writes `waiting` with `waitingFor` there, taken
+   as is). The
    session pid is a descendant of the tab's pty child (the launcher execs
    `claude`, which forks workers), so the match walks `/proc/<pid>/stat` parents
    from the session pid upwards, at most 12 levels, until it reaches a tab pid.
@@ -1160,7 +1162,10 @@ Sources, in order of precedence:
 Context: the transcript is `~/.claude/projects/<encoded cwd>/<sessionId>.jsonl`;
 when the encoded dir guess misses, the file is found by name under
 `~/.claude/projects/*/` once and cached per session. On each poll where the
-transcript's size changed, the last 64 KB are read and the last line with
+transcript's size changed, the last 64 KB are read (growing to 256 KB and
+1 MB when they hold no usage line, stopping once the window reaches back past
+the previous size: one attachment or tool-result line can exceed 64 KB) and
+the last non-sidechain, non-`<synthetic>` line with
 `"type":"assistant"` and a `message.usage` gives
 `tokens = input_tokens + cache_creation_input_tokens + cache_read_input_tokens`
 (the statusline's documented `used_percentage` basis; output tokens excluded)
