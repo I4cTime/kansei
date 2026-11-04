@@ -8,6 +8,12 @@ releases yet; everything so far is on `main` as 0.1.x.
 
 ### Added
 
+- **Release pipeline** (2026-11-04). Pushing a `vX.Y.Z` tag builds an
+  AppImage, a deb, an rpm and an Arch package and publishes them as a GitHub
+  release, after checking the tag against the version in
+  `tauri.conf.json`, `Cargo.toml` and `package.json`. A manual run, or a pull
+  request that touches the pipeline, is a dry run that attaches the same
+  files to the workflow run. README gains "Releases" and "Cutting a release".
 - **Tab status and context gauge** (2026-11-04). Each Claude tab shows
   whether its session is busy, waiting for you (a permission prompt, a
   question, or a finished turn you have not looked at yet) or idle, and a

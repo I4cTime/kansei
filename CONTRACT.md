@@ -1221,3 +1221,81 @@ tooltip says which. The gauge is hidden while `context` is null.
 
 README: a "Tab status" paragraph under Run (or a short new section before
 Themes) and CHANGELOG under Unreleased. Prefs doc comment in prefs.ts.
+
+## Release pipeline (added 2026-11-04)
+
+Task kansei#8. A `v*` tag produces a GitHub release with Linux artifacts; a
+manual run produces the same artifacts without a release, so the workflow can
+be verified without tagging.
+
+### Workflow `.github/workflows/release.yml`
+
+Triggers: `push.tags: ["v*"]`, `workflow_dispatch` (input `dry_run`,
+boolean, default true: build and attach the files to the run as artifacts, no
+release), and `pull_request` filtered to `paths: [.github/workflows/release.yml, packaging/**, src-tauri/tauri.conf.json]`, always a dry run, so a change to the pipeline proves itself on its own PR. Actions pinned to the same SHAs as `ci.yml`.
+
+Jobs:
+
+1. `check-version`: the tag `vX.Y.Z` must equal `version` in
+   `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and `package.json`;
+   fails with a message naming the mismatch. Skipped on a dry run.
+2. `create-release` (tag runs only): a draft release named `Kansei vX.Y.Z` with
+   generated notes, as in MineUI's workflow, output `release_id`.
+3. `bundles` (ubuntu-latest): pnpm, Rust stable, the Tauri Linux deps
+   (`libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev libxdo-dev
+   libayatana-appindicator3-dev patchelf`), then `tauri-apps/tauri-action`
+   with `releaseId` on a tag (uploads the `.deb`, `.rpm` and `.AppImage`), or
+   `pnpm tauri build` plus `actions/upload-artifact` on a dry run.
+4. `arch` (container `archlinux:latest`): `pacman -Syu --noconfirm base-devel
+   git nodejs pnpm rust webkit2gtk-4.1 gtk3 libsoup3` (and whatever the
+   PKGBUILD lists), a non-root `builder` user (makepkg refuses root), then in
+   `packaging/arch`: `KANSEI_SOURCE=file://$GITHUB_WORKSPACE makepkg -f` and
+   `--nodeps` is not used (deps are installed). `git config --global
+   --add safe.directory '*'` first. The `.pkg.tar.zst` is uploaded to the
+   release with `gh release upload` (tag) or as an artifact (dry run).
+   `pkgver()` already derives the version from `git describe --tags`, so the
+   checkout needs `fetch-depth: 0`.
+5. `publish` (tag runs, needs the two builds): flips the draft to published.
+   Pre-release when the tag contains a hyphen (`v0.2.0-rc1`).
+
+`permissions: contents: write` only on the jobs that upload.
+
+### Repo conventions
+
+- Version lives in `src-tauri/tauri.conf.json`, mirrored in `Cargo.toml` and
+  `package.json`; bump all three in one commit "Version X.Y.Z" through a PR,
+  then tag the merge commit `vX.Y.Z` (annotated) and push the tag. The
+  CHANGELOG moves `[Unreleased]` to `[X.Y.Z] - date` in the same PR.
+- The PKGBUILD stays the local-build file; the release job only runs it.
+
+### Docs
+
+README: a "Releases" paragraph under Install (AppImage, deb, rpm and the Arch
+package on the Releases page; the AppImage needs `chmod +x`), and a "Cutting a
+release" paragraph under Development. CHANGELOG under Unreleased.
+
+### As implemented
+
+- Dry run means `github.event_name != 'push'`: a pushed `v*` tag is the only
+  release run. The `workflow_dispatch` input `dry_run` exists as specified,
+  but a manual run is always a dry run whatever it is set to (there is no
+  tag to release); a release is re-cut by pushing the tag again.
+- Pins: checkout, pnpm, setup-node, rust-toolchain and rust-cache use the
+  `ci.yml` SHAs. `ci.yml` has no github-script, tauri-action or
+  upload-artifact, so github-script (v9.0.0) and tauri-action (v1) use
+  MineUI's release pins, and upload-artifact is pinned to v7.0.2.
+- `bundles` installs the `ci.yml` apt list plus `patchelf` and `file` for the
+  AppImage. Dry runs upload three artifacts: `kansei-appimage`, `kansei-deb`,
+  `kansei-rpm`.
+- `arch` installs the PKGBUILD's depends and makedepends (`rust` provides
+  `cargo`) plus `base-devel git sudo`, and `github-cli` for `gh release
+  upload`. pacman runs before checkout, because `actions/checkout` without
+  git in the container fetches a tarball with no `.git`.
+  `safe.directory '*'` is set with `--system` (not `--global`) so it covers
+  both root and the `builder` user. The PR or tag checkout is a detached
+  HEAD, which makepkg's mirror clone of `file://$GITHUB_WORKSPACE` cannot
+  follow, so the job runs `git checkout -B release-build` first. makepkg runs
+  as `sudo -u builder -H` with `--noconfirm`. The dry-run artifact is
+  `kansei-arch`.
+- `bundles` and `arch` need `create-release` and run when it succeeded or
+  was skipped (dry run). Concurrency cancels in-progress PR runs only.
