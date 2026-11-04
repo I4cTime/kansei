@@ -74,3 +74,13 @@ describe("sanitizePrefs tab status keys", () => {
     expect(sanitizePrefs({ notifyWaiting: "no" }).notifyWaiting).toBe(true);
   });
 });
+
+describe("sanitizePrefs paletteRecent", () => {
+  it("defaults to empty, keeps strings in order without duplicates, caps at 8", () => {
+    expect(DEFAULT_PREFS.paletteRecent).toEqual([]);
+    expect(sanitizePrefs({ paletteRecent: "panel:board" }).paletteRecent).toEqual([]);
+    expect(sanitizePrefs({ paletteRecent: ["panel:board", 3, "", "panel:board", " theme:dark "] }).paletteRecent).toEqual(["panel:board", "theme:dark"]);
+    const ten = Array.from({ length: 10 }, (_, i) => `panel:p${i}`);
+    expect(sanitizePrefs({ paletteRecent: ten }).paletteRecent).toEqual(ten.slice(0, 8));
+  });
+});
