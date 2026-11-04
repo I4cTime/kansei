@@ -10,6 +10,7 @@ import { loadPrefs } from "./prefs";
 import { toastError } from "./store";
 import { restoreTabs } from "./tabs";
 import { startPtyRouting } from "./terminals";
+import { startActivity } from "./activity";
 import { startTheme } from "./theme/apply";
 import { startWorkspaces } from "../panels/projects/workspaceStore";
 import { startBoard } from "../panels/board/actions";
@@ -25,6 +26,7 @@ async function boot() {
     toastError(e, "Could not listen for terminal output");
   }
   await loadPrefs();
+  startActivity().catch((e) => toastError(e, "Could not listen for tab status"));
   startTheme();
   startWorkspaces();
   startBoard();

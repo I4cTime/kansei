@@ -18,6 +18,8 @@ export type Tab = {
   exitCode: number | null;
   /** Set when pty_spawn itself failed. */
   error: string | null;
+  /** The pty child's pid (from pty_spawn or pty_list); null while spawning, after exit or when unknown. */
+  pid: number | null;
 };
 
 export const tabsAtom = atom<Tab[]>([]);

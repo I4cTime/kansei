@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAtomValue } from "jotai";
 import { ExternalLink, FileText, FolderPlus, Palette as PaletteIcon, Unlink, Upload, X } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { claudeCommandAtom, prefsAtom, savePrefs, type Prefs } from "../../app/prefs";
+import { CONTEXT_WINDOW_MAX, CONTEXT_WINDOW_MIN, claudeCommandAtom, prefsAtom, savePrefs, type Prefs } from "../../app/prefs";
 import { refreshProject } from "../../app/project";
 import { theme as themeIpc, type ProjectInfo } from "../../lib/ipc";
 import { activeThemeAtom, omarchyAtom } from "../../app/theme/apply";
@@ -241,12 +241,14 @@ function AppSettings() {
   const toast = useToast();
   const [font, setFont] = useState(prefs.fontFamily);
   const [size, setSize] = useState(String(prefs.fontSize));
+  const [ctxWindow, setCtxWindow] = useState(String(prefs.contextWindow));
   const [claude, setClaude] = useState(prefs.claudeCommand);
   const resolved = useAtomValue(claudeCommandAtom);
   const home = usePaths()?.home;
   useEffect(() => setFont(prefs.fontFamily), [prefs.fontFamily]);
   useEffect(() => setClaude(prefs.claudeCommand), [prefs.claudeCommand]);
   useEffect(() => setSize(String(prefs.fontSize)), [prefs.fontSize]);
+  useEffect(() => setCtxWindow(String(prefs.contextWindow)), [prefs.contextWindow]);
 
   const save = (patch: Partial<Prefs>) => {
     savePrefs(patch).catch((e) => toast.error(e, "Could not save prefs"));
@@ -257,6 +259,14 @@ function AppSettings() {
     if (Number.isFinite(n) && n >= 8 && n <= 32) {
       if (n !== prefs.fontSize) save({ fontSize: n });
     } else setSize(String(prefs.fontSize));
+  };
+
+  const commitWindow = () => {
+    const n = Math.round(Number(ctxWindow));
+    if (Number.isFinite(n) && n >= CONTEXT_WINDOW_MIN && n <= CONTEXT_WINDOW_MAX) {
+      if (n !== prefs.contextWindow) save({ contextWindow: n });
+      else setCtxWindow(String(n));
+    } else setCtxWindow(String(prefs.contextWindow));
   };
 
   const commitClaude = () => {
@@ -321,6 +331,26 @@ function AppSettings() {
             title={font}
           />
         </Field>
+        <Field label="Context window" hint="Tokens the tab gauge measures against, 50000 to 2000000. A session past 200000 tokens uses 1000000.">
+          <TextInput
+            type="number"
+            min={CONTEXT_WINDOW_MIN}
+            max={CONTEXT_WINDOW_MAX}
+            step={1000}
+            value={ctxWindow}
+            onChange={(e) => setCtxWindow(e.target.value)}
+            onBlur={commitWindow}
+            onKeyDown={(e) => e.key === "Enter" && commitWindow()}
+            data-context-window
+          />
+        </Field>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-[11px] font-medium uppercase tracking-wide text-fg-muted">Notify when a hidden tab needs you</span>
+            <Toggle label="Notify when a hidden tab needs you" checked={prefs.notifyWaiting} onChange={(v) => save({ notifyWaiting: v })} />
+          </div>
+          <span className="text-[11px] text-fg-muted">A desktop notification when Claude in a tab you are not looking at asks for permission, asks a question or finishes its turn.</span>
+        </div>
       </div>
       <Appearance prefs={prefs} save={save} />
       <Note>Saved to ~/.local/share/kansei/prefs.json. Terminals pick up font and theme changes live.</Note>

@@ -4,11 +4,12 @@
 // helpers below and the JSON result is handed back through driver_result.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { pty, files, memory, mcp, projects as projectsIpc, sessions as sessionsIpc, project as projectIpc, workspace as workspaceIpc, board as boardIpc, schedule as scheduleIpc } from "../lib/ipc";
+import { activity as activityIpc, pty, files, memory, mcp, projects as projectsIpc, sessions as sessionsIpc, project as projectIpc, workspace as workspaceIpc, board as boardIpc, schedule as scheduleIpc } from "../lib/ipc";
 import { projectAtom, refreshProject } from "./project";
 import * as terminals from "./terminals";
 import * as tabs from "./tabs";
 import { store } from "./store";
+import { activityAtom, tabActivity } from "./activity";
 import { claudeCommandAtom, prefsAtom, refreshClaudeCommand, savePrefs, setPrefs, spawnCommand } from "./prefs";
 import { overlayAtom, toastsAtom } from "../lib/overlay";
 import { dismissOverlay } from "./keyboard";
@@ -44,7 +45,7 @@ export function installDriver() {
     dismissOverlay,
     invoke,
     listen,
-    ipc: { pty, files, memory, mcp, projects: projectsIpc, sessions: sessionsIpc, project: projectIpc, workspace: workspaceIpc, board: boardIpc, schedule: scheduleIpc },
+    ipc: { activity: activityIpc, pty, files, memory, mcp, projects: projectsIpc, sessions: sessionsIpc, project: projectIpc, workspace: workspaceIpc, board: boardIpc, schedule: scheduleIpc },
     /**
      * Board atoms and pure helpers (boardConfigAtom, snapshotAtom, ghStatusAtom, laneGroups, areaProject...) and its
      * actions (configureBoard, disconnectBoard, refreshBoard, setItemField: writes to GitHub).
@@ -62,6 +63,8 @@ export function installDriver() {
     workspaces,
     workspaceModel,
     terminals,
+    /** Tab status and context: activityAtom (per pty pid, after the idle-after-busy rule) and tabActivity(tab). */
+    activity: { activityAtom, tabActivity },
     /** querySelector that throws a readable error when nothing matches. */
     q(sel: string): HTMLElement {
       const el = document.querySelector<HTMLElement>(sel);

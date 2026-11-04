@@ -12,6 +12,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { b64ToBytes, pty } from "../lib/ipc";
+import { noteTabInput } from "./activity";
 import { overlayAtom } from "../lib/overlay";
 import { prefsAtom, spawnCommand } from "./prefs";
 import { matchShortcut } from "./shortcuts";
@@ -98,7 +99,7 @@ function handleExit(key: string, id: string, code: number | null) {
   idToKey.delete(id);
   const tab = getTab(key);
   if (!tab || tab.id !== id) return;
-  updateTab(key, { id: null, status: "dead", exitCode: code });
+  updateTab(key, { id: null, status: "dead", exitCode: code, pid: null });
 }
 
 // ---------------------------------------------------------------------------
@@ -154,7 +155,10 @@ function ensureEntry(key: string): Entry {
 
   const send = (data: string) => {
     const tab = getTab(key);
-    if (tab?.id && tab.status === "alive") pty.write(tab.id, data).catch(() => {});
+    if (tab?.id && tab.status === "alive") {
+      pty.write(tab.id, data).catch(() => {});
+      noteTabInput(key, data);
+    }
   };
   term.onData(send);
   term.onBinary(send);
@@ -311,7 +315,7 @@ export async function spawnTab(key: string): Promise<void> {
       dims = lastGood;
       e.term.resize(dims.cols, dims.rows);
     }
-    const { id } = await pty.spawn({ cwd: tab.cwd, command, args: tab.args, cols: dims.cols, rows: dims.rows });
+    const { id, pid } = await pty.spawn({ cwd: tab.cwd, command, args: tab.args, cols: dims.cols, rows: dims.rows });
     if (!getTab(key) || !entries.has(key)) {
       // Closed while spawning.
       pending.delete(id);
@@ -320,7 +324,7 @@ export async function spawnTab(key: string): Promise<void> {
     }
     idToKey.set(id, key);
     e.lastSent = dims;
-    updateTab(key, { id, status: "alive", exitCode: null, error: null });
+    updateTab(key, { id, status: "alive", exitCode: null, error: null, pid: pid ?? null });
     const p = pending.get(id);
     if (p) {
       pending.delete(id);
@@ -331,7 +335,7 @@ export async function spawnTab(key: string): Promise<void> {
     fitTerminal(key);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    updateTab(key, { id: null, status: "dead", exitCode: null, error: msg });
+    updateTab(key, { id: null, status: "dead", exitCode: null, error: msg, pid: null });
     toastError(err, `Could not start ${command}`);
   } finally {
     spawning.delete(key);
@@ -343,7 +347,7 @@ export function restartTerminal(key: string) {
   const tab = getTab(key);
   if (!tab || tab.status !== "dead") return;
   const e = entries.get(key);
-  updateTab(key, { status: "spawning", id: null, exitCode: null, error: null });
+  updateTab(key, { status: "spawning", id: null, exitCode: null, error: null, pid: null });
   if (e) {
     e.term.write("\r\n\x1b[2m[restarting]\x1b[0m\r\n");
     e.lastSent = null;
