@@ -998,3 +998,94 @@ The Appearance section becomes:
   Claude theme. `activeThemeAtom: { source, name, palette: Palette | null, effects: Effects }`
   for the Settings swatches. Dev driver: `t.theme.{activeThemeAtom, applyNow}`.
 - `src/lib/ipc.ts`: `theme` namespace as above.
+
+## Board configuration (added 2026-11-03)
+
+The Board and Calendar panels work against any GitHub Project v2 the user
+owns, not only the author's. Nothing about the project is compiled in: the
+constants `OWNER`, `PROJECT_NUMBER`, `PROJECT_ID`, `HUB_REPO` and `BOARD_URL`
+in `src-tauri/src/board.rs` and `HUB_REPO`, `BOARD_URL` in
+`src/panels/board/model.ts` are removed.
+
+### Prefs
+
+```ts
+board: {
+  owner: string;          // GitHub user or organisation login
+  projectNumber: number;  // the N in github.com/users/<owner>/projects/N
+  hubRepo: string;        // "owner/name": where epics are created (Kind = Epic)
+  projectId: string;      // resolved node id, PVT_...
+  url: string;            // resolved project URL
+  title: string;          // resolved project title
+} | null                  // default null = not configured
+```
+
+`sanitizePrefs` keeps the object only when every field is a non-empty string
+(`projectNumber` a positive integer) and `hubRepo` matches `^[\w.-]+/[\w.-]+$`;
+otherwise `null`. The front end owns prefs.json; Rust reads the `board` key
+per call like it reads `workspaceRoots`.
+
+### Rust
+
+- `BoardConfig { owner, project_number, hub_repo, project_id, url, title }`,
+  `read_config(dir: &Path) -> Option<BoardConfig>` from `<appData>/prefs.json`.
+- New command `board_configure { owner, projectNumber, hubRepo } -> BoardSetup`:
+
+  ```ts
+  type BoardSetup = {
+    config: BoardConfig;                       // camelCase, same shape as the pref
+    missingFields: string[];                   // required fields the project lacks
+    missingOptions: Record<string, string[]>;  // field -> option names it lacks
+  };
+  ```
+
+  It resolves the project through `gh api graphql`
+  (`user(login: $o) { projectV2(number: $n) { id title url } }`, and when that
+  returns null, `organization(login: $o)` the same way), then fetches the field
+  list with the resolved id and checks the conventions the panels rely on:
+  Status (single select; options Backlog, Ready, In progress, In review, Done),
+  Kind (single select; Epic, Task), Area (single select, any options),
+  Scheduled (date), Order (number). Started, Target, Done when and Outcome are
+  optional and reported nowhere. A project that cannot be resolved is an `Err`
+  with the gh message; missing fields are not an error, the front end shows
+  them as a warning and still saves. The per-run field cache is cleared.
+- Every board command reads the config first. `board_fetch` and `board_cached`
+  without one return `{ fetchedAt: "", items: [], error: "Board not configured" }`;
+  `board_set_field`, `board_create_task`, `board_create_epic` return
+  `Err("Board not configured")`. `schedule_render` and the startup render still
+  write `SCHEDULE.md` from the rhythm and overrides alone, with no task lines
+  and no "Board:" link in the header line when there is no config.
+- `board_create_epic` creates in `config.hub_repo`; `SCHEDULE.md`'s header uses
+  `config.url`; the task lookups that used `OWNER`/`PROJECT_NUMBER` use the
+  config. Tests build a `BoardConfig` fixture; no test depends on the author's
+  ids.
+
+### Front end
+
+- `boardConfigAtom` (derived from `prefsAtom.board`) in `src/panels/board/model.ts`.
+  Helpers that compared against `HUB_REPO` take `hubRepo: string | null` as a
+  parameter (`areaOrRepo`, `itemProject`, the repo list in the task sheet, the
+  epic sheet subtitle).
+- `configureBoard(a: { owner; projectNumber; hubRepo })` in `actions.ts`: calls
+  `board.configure`, saves the returned config into prefs, clears the snapshot,
+  refreshes the board, returns the `BoardSetup` so the caller can toast missing
+  fields ("The project has no Order field; ordering is disabled" style, one
+  toast listing them all).
+- Unconfigured state: BoardPanel shows a setup card instead of lanes: three
+  inputs (owner, project number, hub repo), a Connect button, and one sentence
+  on the required fields with a link to README "Board". CalendarPanel keeps
+  working (rhythm, notes, activity dots) and shows one line "No board
+  connected" where the scheduled tasks would be, linking to the Board panel.
+  The sidebar Today strip drops the task count when there is no config. The
+  10-minute auto refresh and the boot fetch are skipped without a config.
+- Settings, This app: a Board section with the same three fields prefilled
+  from the config, the resolved title as a link to `url`, Connect (or
+  Reconnect) and Disconnect (sets `board: null`, clears the snapshot).
+- Dev driver: `t.board.configureBoard`, `t.board.boardConfigAtom`.
+- `src/lib/ipc.ts`: `board.configure(a) -> BoardSetup`, `BoardConfig` type.
+
+### Docs
+
+README: the Status bullet about the author's board becomes "connect your own
+GitHub Project in Settings or the Board panel", and the Board section lists the
+required fields and options above. CHANGELOG under Unreleased.
