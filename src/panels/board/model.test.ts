@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BoardItem, WorkspaceNode } from "../../lib/ipc";
-import { areaProject, filterItems, isOverdue, itemProject, laneGroups, laneItems, laneOf, patchItem, withItem } from "./model";
+import { areaOptions, areaProject, filterItems, isOverdue, itemChip, itemProject, laneGroups, laneItems, laneOf, patchItem, projectNames, setupWarning, withItem } from "./model";
 
 const FLAGS = { claudeMd: false, claudeDir: false, mcpJson: false, git: true, worktree: false };
 const node = (path: string, kind: WorkspaceNode["kind"], children: WorkspaceNode[] = []): WorkspaceNode => ({
@@ -45,7 +45,7 @@ describe("areaProject", () => {
 const item = (over: Partial<BoardItem>): BoardItem => ({
   itemId: "I",
   number: 1,
-  repo: "I4cTime/aibou",
+  repo: "acme/aibou",
   title: "t",
   url: "",
   state: "open",
@@ -66,10 +66,10 @@ const item = (over: Partial<BoardItem>): BoardItem => ({
 });
 
 describe("board helpers", () => {
-  const epic = item({ itemId: "E", number: 20, repo: "I4cTime/focus", title: "Aibou app", kind: "Epic", area: "aibou", status: "In progress" });
-  const t1 = item({ itemId: "T1", number: 12, title: "Refund test", parent: { repo: "I4cTime/focus", number: 20 }, order: 2 });
-  const t2 = item({ itemId: "T2", number: 13, title: "Landing", parent: { repo: "I4cTime/focus", number: 20 }, order: 1 });
-  const t3 = item({ itemId: "T3", number: 5, repo: "I4cTime/niwa", title: "Lost epic", parent: { repo: "I4cTime/focus", number: 99 } });
+  const epic = item({ itemId: "E", number: 20, repo: "acme/hub", title: "Aibou app", kind: "Epic", area: "aibou", status: "In progress" });
+  const t1 = item({ itemId: "T1", number: 12, title: "Refund test", parent: { repo: "acme/hub", number: 20 }, order: 2 });
+  const t2 = item({ itemId: "T2", number: 13, title: "Landing", parent: { repo: "acme/hub", number: 20 }, order: 1 });
+  const t3 = item({ itemId: "T3", number: 5, repo: "acme/niwa", title: "Lost epic", parent: { repo: "acme/hub", number: 99 } });
   const done = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => item({ itemId: `D${n}`, number: 100 + n, status: "Done", state: "closed", closedAt: `2026-10-${String(n + 10).padStart(2, "0")}T00:00:00Z` }));
   const all = [epic, t1, t2, t3, ...done];
 
@@ -102,9 +102,13 @@ describe("board helpers", () => {
     expect(isOverdue(item({ scheduled: "2026-10-31" }), "2026-11-01")).toBe(true);
     expect(isOverdue(item({ scheduled: "2026-10-31", status: "Done" }), "2026-11-01")).toBe(false);
     expect(isOverdue(item({ scheduled: "2026-11-01" }), "2026-11-01")).toBe(false);
-    expect(itemProject(epic, tree, {})).toBe("/d/products/aibou");
-    expect(itemProject(t3, tree, {})).toBeNull();
-    expect(itemProject(item({ repo: "I4cTime/q-ring" }), tree, {})).toBe("/d/products/q-ring");
+    expect(itemProject(epic, tree, {}, "acme/hub")).toBe("/d/products/aibou");
+    expect(itemProject(t3, tree, {}, "acme/hub")).toBeNull();
+    expect(itemProject(item({ repo: "acme/q-ring" }), tree, {}, "acme/hub")).toBe("/d/products/q-ring");
+    // The hub repo's name never maps to a project; without a hub every repo name may.
+    const hubbed = item({ repo: "acme/aibou", area: null });
+    expect(itemProject(hubbed, tree, {}, "acme/aibou")).toBeNull();
+    expect(itemProject(hubbed, tree, {}, null)).toBe("/d/products/aibou");
   });
 
   it("patches and replaces items for optimistic writes", () => {
@@ -115,5 +119,29 @@ describe("board helpers", () => {
     const snap = withItem({ fetchedAt: "", items: [t1], error: null, areas: [] }, { ...t1, title: "new" });
     expect(snap.items.map((i) => i.title)).toEqual(["new"]);
     expect(withItem(null, t2).items).toEqual([t2]);
+  });
+});
+
+describe("board configuration helpers", () => {
+  it("shows the area for hub items and the repo name otherwise", () => {
+    expect(itemChip(item({ repo: "acme/hub", area: "aibou", kind: "Epic" }), "acme/hub")).toBe("aibou");
+    expect(itemChip(item({ repo: "acme/niwa", area: "aibou" }), "acme/hub")).toBe("niwa");
+    expect(itemChip(item({ repo: "acme/hub", area: "aibou" }), null)).toBe("hub");
+  });
+
+  it("offers the board's areas, else the workspace project names", () => {
+    const snap = { fetchedAt: "x", items: [], error: null, areas: ["a", "b"] };
+    expect(areaOptions(snap, ["c", null, "a"], ["p"])).toEqual(["a", "b", "c"]);
+    expect(areaOptions(null, ["c"], ["p", "q"])).toEqual(["p", "q", "c"]);
+    expect(areaOptions({ ...snap, areas: [] })).toEqual([]);
+    expect(projectNames(tree)).toEqual(["aibou", "cryo", "i4c-sites", "Kansei", "q-ring"]);
+  });
+
+  it("lists what a connected project lacks in one line", () => {
+    expect(setupWarning({ missingFields: [], missingOptions: {} })).toBeNull();
+    expect(setupWarning({ missingFields: ["Order"], missingOptions: {} })).toBe("The project has no Order field; ordering is disabled.");
+    expect(setupWarning({ missingFields: ["Scheduled", "Order"], missingOptions: { Status: ["In review"], Kind: ["Epic", "Task"], Area: [] } })).toBe(
+      "The project has no Scheduled field; tasks cannot be scheduled. The project has no Order field; ordering is disabled. Status lacks the option In review. Kind lacks the options Epic, Task.",
+    );
   });
 });

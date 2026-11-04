@@ -1,6 +1,7 @@
-// Board panel (CONTRACT.md "Board and Calendar"): the I4C GitHub Project as
-// one collapsible section per lane (vertical, the sidebar is narrow), tasks
-// grouped under their epic, with optimistic lane moves and scheduling.
+// Board panel (CONTRACT.md "Board and Calendar", "Board configuration"): the
+// connected GitHub Project as one collapsible section per lane (vertical, the
+// sidebar is narrow), tasks grouped under their epic, with optimistic lane
+// moves and scheduling. Without a connected project: a setup card.
 import { useEffect, useMemo, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -20,6 +21,7 @@ import {
   DONE_LIMIT,
   LANES,
   areaOptions,
+  boardConfigAtom,
   boardLoadingAtom,
   epicProgress,
   filterItems,
@@ -32,9 +34,11 @@ import {
   laneItems,
   laneOf,
   laneOpenAtom,
+  projectNames,
   snapshotAtom,
   type KindFilter,
 } from "./model";
+import { BoardConnectForm, RequiredFieldsNote } from "./BoardConnect";
 import { MoveScheduleSheet, NewEpicSheet, NewTaskSheet } from "./sheets";
 import { StatusDot } from "./StatusDot";
 
@@ -63,14 +67,18 @@ export function AsOf({ fetchedAt, now }: { fetchedAt: string | undefined; now: n
   );
 }
 
-/** gh unavailable, missing project scope, or a failed refresh. */
+/** gh unavailable, missing project scope, or a failed refresh (only with a connected project). */
 export function BoardNotice() {
   const gh = useAtomValue(ghStatusAtom);
   const snap = useAtomValue(snapshotAtom);
+  const config = useAtomValue(boardConfigAtom);
   let text: string | null = null;
-  if (gh && !gh.available) text = `gh is not available (${gh.error ?? "not logged in"}). Showing the cached board; run gh auth login in a shell.`;
+  if (gh && !gh.available)
+    text = config
+      ? `gh is not available (${gh.error ?? "not logged in"}). Showing the cached board; run gh auth login in a shell.`
+      : `gh is not available (${gh.error ?? "not logged in"}). Connecting needs it; run gh auth login in a shell.`;
   else if (gh && gh.available && !gh.scopes.includes("project")) text = "The gh login lacks the project scope, so changes will fail. Run gh auth refresh -s project.";
-  else if (snap?.error) text = `Last refresh failed: ${snap.error}`;
+  else if (config && snap?.error) text = `Last refresh failed: ${snap.error}`;
   if (!text) return null;
   return (
     <div className="mx-3 mt-2 flex items-start gap-1.5 rounded-ui border border-warn/60 bg-bg-raised px-2 py-1.5 text-[11px] leading-snug text-warn" role="status">
@@ -80,7 +88,36 @@ export function BoardNotice() {
   );
 }
 
+/** Shown instead of the lanes while no project is connected. */
+function BoardSetupCard() {
+  return (
+    <div className="mx-3 my-3 flex flex-col gap-2.5 rounded-ui border border-border bg-bg-raised p-3" data-board-setup="">
+      <div>
+        <div className="text-xs font-medium text-fg">Connect a GitHub Project</div>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-fg-muted">
+          The Board shows a Project v2 of yours (user or organisation) through the gh CLI: epics in a hub repo, tasks as their sub-issues.
+        </p>
+      </div>
+      <BoardConnectForm config={null} />
+      <RequiredFieldsNote />
+    </div>
+  );
+}
+
 export function BoardPanel() {
+  const config = useAtomValue(boardConfigAtom);
+  if (!config) {
+    return (
+      <Panel title="Board">
+        <BoardNotice />
+        <BoardSetupCard />
+      </Panel>
+    );
+  }
+  return <ConnectedBoard hubRepo={config.hubRepo} title={config.title} />;
+}
+
+function ConnectedBoard({ hubRepo, title }: { hubRepo: string; title: string }) {
   const toast = useToast();
   const snap = useAtomValue(snapshotAtom);
   const loading = useAtomValue(boardLoadingAtom);
@@ -116,13 +153,13 @@ export function BoardPanel() {
   const projectOf = useMemo(() => {
     const cache = new Map<string, string | null>();
     return (i: BoardItem) => {
-      if (!cache.has(i.itemId)) cache.set(i.itemId, itemProject(i, trees, registry));
+      if (!cache.has(i.itemId)) cache.set(i.itemId, itemProject(i, trees, registry, hubRepo));
       return cache.get(i.itemId) ?? null;
     };
-  }, [trees, registry]);
+  }, [trees, registry, hubRepo]);
 
-  const newTask = () => openSheet((close) => <NewTaskSheet items={items} close={close} />);
-  const newEpic = () => openSheet((close) => <NewEpicSheet areas={areaOptions(snap)} close={close} />);
+  const newTask = () => openSheet((close) => <NewTaskSheet items={items} hubRepo={hubRepo} close={close} />);
+  const newEpic = () => openSheet((close) => <NewEpicSheet areas={areaOptions(snap, [], projectNames(trees))} hubRepo={hubRepo} close={close} />);
 
   const act = {
     move: (i: BoardItem, to: BoardStatus) => {
@@ -173,7 +210,7 @@ export function BoardPanel() {
       {!snap && <EmptyState title="Loading the board">Reading the cached board, then GitHub.</EmptyState>}
       {snap && items.length === 0 && (
         <EmptyState title={snap.fetchedAt ? "The board is empty" : "No board yet"}>
-          {snap.fetchedAt ? "Nothing is on the I4C board." : "The I4C board has not been fetched yet. It needs gh logged in with the project scope."}
+          {snap.fetchedAt ? `Nothing is on the ${title} board.` : `The ${title} board has not been fetched yet. It needs gh logged in with the project scope.`}
         </EmptyState>
       )}
       {snap && items.length > 0 && shown.length === 0 && (
@@ -212,6 +249,7 @@ export function BoardPanel() {
                       <BoardRow
                         key={i.itemId}
                         item={i}
+                        hubRepo={hubRepo}
                         today={today}
                         project={projectOf(i)}
                         home={home}
@@ -239,6 +277,7 @@ type RowActs = {
 
 function BoardRow({
   item,
+  hubRepo,
   today,
   project,
   home,
@@ -247,6 +286,7 @@ function BoardRow({
   act,
 }: {
   item: BoardItem;
+  hubRepo: string;
   today: string;
   project: string | null;
   home?: string;
@@ -255,7 +295,7 @@ function BoardRow({
   act: RowActs;
 }) {
   const lane = laneOf(item);
-  const chip = itemChip(item);
+  const chip = itemChip(item, hubRepo);
   const overdue = isOverdue(item, today);
   const projectTip = project ? `Open a tab in ${tildify(project, home)}` : "No workspace project matches its area or repo";
   return (

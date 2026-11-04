@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PREFS, sanitizePrefs } from "./prefs";
+import { DEFAULT_PREFS, sanitizeBoard, sanitizePrefs } from "./prefs";
 
 describe("sanitizePrefs theme keys", () => {
   it("defaults the new keys", () => {
@@ -21,5 +21,41 @@ describe("sanitizePrefs theme keys", () => {
     expect([p.effects, p.claudeTheme, p.claudeThemeRestore]).toEqual([false, false, "dark-ansi"]);
     const q = sanitizePrefs({ effects: "no", claudeTheme: 0, claudeThemeRestore: 5 });
     expect([q.effects, q.claudeTheme, q.claudeThemeRestore]).toEqual([true, true, null]);
+  });
+});
+
+describe("sanitizePrefs board", () => {
+  const board = { owner: "acme", projectNumber: 7, hubRepo: "acme/hub", projectId: "PVT_x", url: "https://github.com/users/acme/projects/7", title: "Plans" };
+
+  it("defaults to not configured", () => {
+    expect(DEFAULT_PREFS.board).toBeNull();
+    expect(sanitizePrefs({}).board).toBeNull();
+    expect(sanitizePrefs({ board: null }).board).toBeNull();
+  });
+
+  it("keeps a complete config, trimmed", () => {
+    expect(sanitizePrefs({ board }).board).toEqual(board);
+    expect(sanitizeBoard({ ...board, owner: " acme ", hubRepo: "acme/hub " })).toEqual(board);
+    expect(sanitizeBoard({ ...board, hubRepo: "my.org/some_repo-2" })?.hubRepo).toBe("my.org/some_repo-2");
+  });
+
+  it("drops the whole object when a field is missing or wrong", () => {
+    const bad: Record<string, unknown>[] = [
+      { owner: "" },
+      { owner: "   " },
+      { owner: 5 },
+      { projectNumber: 0 },
+      { projectNumber: -1 },
+      { projectNumber: 1.5 },
+      { projectNumber: "7" },
+      { hubRepo: "hub" },
+      { hubRepo: "acme/hub/x" },
+      { hubRepo: "acme/h b" },
+      { projectId: "" },
+      { url: null },
+      { title: undefined },
+    ];
+    for (const patch of bad) expect(sanitizePrefs({ board: { ...board, ...patch } }).board, JSON.stringify(patch)).toBeNull();
+    expect(sanitizePrefs({ board: "acme/7" }).board).toBeNull();
   });
 });

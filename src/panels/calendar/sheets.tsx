@@ -8,7 +8,8 @@ import type { DayPlan, WeekdayKey } from "../../lib/ipc";
 import { Button, IconButton, Select, TextInput } from "../ui";
 import { Sheet } from "../shared/Sheet";
 import { store } from "../../app/store";
-import { snapshotAtom } from "../board/model";
+import { boardConfigAtom, snapshotAtom } from "../board/model";
+import { NoBoardLine } from "../board/BoardConnect";
 import { setItemField } from "../board/actions";
 import { StatusDot } from "../board/StatusDot";
 import { saveSchedule } from "./actions";
@@ -34,7 +35,9 @@ const Label = ({ children }: { children: string }) => <span className="text-[11p
 
 export function DaySheet({ date, title, areas, close }: { date: Ymd; title: string; areas: string[]; close: () => void }) {
   const schedule = useAtomValue(scheduleAtom) ?? emptySchedule();
-  const snap = useAtomValue(snapshotAtom);
+  const config = useAtomValue(boardConfigAtom);
+  const boardSnap = useAtomValue(snapshotAtom);
+  const snap = config ? boardSnap : null;
   const plan = dayPlan(schedule, date);
   const rhythm = schedule.rhythm[weekdayKey(date)];
   const [area, setArea] = useState<string | null>(plan.area);
@@ -102,38 +105,47 @@ export function DaySheet({ date, title, areas, close }: { date: Ymd; title: stri
             }}
           />
         </label>
-        <div className="flex flex-col gap-1">
-          <Label>Tasks</Label>
-          {tasks.length === 0 && <p className="text-[11px] text-fg-muted">Nothing scheduled.</p>}
-          {tasks.map((t) => (
-            <div key={t.itemId} className="flex min-w-0 items-center gap-1.5 rounded-ui px-1 py-0.5 hover:bg-bg-hover" data-day-task={t.itemId}>
-              <StatusDot item={t} />
-              <span className="min-w-0 flex-1 truncate text-xs text-fg" title={`${t.repo}#${t.number} ${t.title}`}>
-                {t.title}
-              </span>
-              <span className="shrink-0 font-mono text-[11px] text-fg-muted">#{t.number}</span>
-              <IconButton icon={CalendarX} title="Unschedule" onClick={() => void setItemField(t.itemId, "scheduled", null)} />
+        {!config ? (
+          <div className="flex flex-col gap-1">
+            <Label>Tasks</Label>
+            <NoBoardLine onOpen={close} />
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-col gap-1">
+              <Label>Tasks</Label>
+              {tasks.length === 0 && <p className="text-[11px] text-fg-muted">Nothing scheduled.</p>}
+              {tasks.map((t) => (
+                <div key={t.itemId} className="flex min-w-0 items-center gap-1.5 rounded-ui px-1 py-0.5 hover:bg-bg-hover" data-day-task={t.itemId}>
+                  <StatusDot item={t} />
+                  <span className="min-w-0 flex-1 truncate text-xs text-fg" title={`${t.repo}#${t.number} ${t.title}`}>
+                    {t.title}
+                  </span>
+                  <span className="shrink-0 font-mono text-[11px] text-fg-muted">#{t.number}</span>
+                  <IconButton icon={CalendarX} title="Unschedule" onClick={() => void setItemField(t.itemId, "scheduled", null)} />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <label className="flex flex-col gap-1">
-          <Label>Schedule a task</Label>
-          <Select
-            value=""
-            aria-label="Schedule a task on this day"
-            disabled={pickable.length === 0}
-            onChange={(e) => {
-              if (e.target.value) void setItemField(e.target.value, "scheduled", date);
-            }}
-          >
-            <option value="">{pickable.length === 0 ? "No open tasks to schedule" : "Pick a task..."}</option>
-            {pickable.map((t) => (
-              <option key={t.itemId} value={t.itemId}>
-                {t.status ?? "Backlog"}: {t.title} ({t.repo.split("/")[1]}#{t.number}){t.scheduled ? `, now ${t.scheduled}` : ""}
-              </option>
-            ))}
-          </Select>
-        </label>
+            <label className="flex flex-col gap-1">
+              <Label>Schedule a task</Label>
+              <Select
+                value=""
+                aria-label="Schedule a task on this day"
+                disabled={pickable.length === 0}
+                onChange={(e) => {
+                  if (e.target.value) void setItemField(e.target.value, "scheduled", date);
+                }}
+              >
+                <option value="">{pickable.length === 0 ? "No open tasks to schedule" : "Pick a task..."}</option>
+                {pickable.map((t) => (
+                  <option key={t.itemId} value={t.itemId}>
+                    {t.status ?? "Backlog"}: {t.title} ({t.repo.split("/")[1]}#{t.number}){t.scheduled ? `, now ${t.scheduled}` : ""}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          </>
+        )}
       </div>
     </Sheet>
   );

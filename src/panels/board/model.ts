@@ -1,22 +1,22 @@
-// Board model (CONTRACT.md "Board and Calendar"): the cached snapshot atom,
-// lanes, filtering, epic grouping and the mapping from an Area (or a repo
-// name) to a workspace project. Pure helpers apart from the atoms.
+// Board model (CONTRACT.md "Board and Calendar", "Board configuration"): the
+// connected project (from prefs), the cached snapshot atom, lanes, filtering,
+// epic grouping and the mapping from an Area (or a repo name) to a workspace
+// project. Pure helpers apart from the atoms.
 import { atom } from "jotai";
-import type { BoardItem, BoardSnapshot, BoardStatus, GhStatus, WorkspaceNode } from "../../lib/ipc";
+import type { BoardItem, BoardSetup, BoardSnapshot, BoardStatus, GhStatus, WorkspaceNode } from "../../lib/ipc";
+import { prefsAtom } from "../../app/prefs";
 import { basename } from "../shared/paths";
 import { indexTree, type Registry } from "../projects/workspace";
 import { byLaneThenTitle } from "../calendar/model";
 
 export const LANES: BoardStatus[] = ["Backlog", "Ready", "In progress", "In review", "Done"];
-export const HUB_REPO = "I4cTime/focus";
-export const BOARD_URL = "https://github.com/users/I4cTime/projects/3";
 /** Done shows only this many, newest closedAt first. */
 export const DONE_LIMIT = 10;
-/** The Area options on 2026-11-01, for when the board has not been fetched yet. */
-export const FALLBACK_AREAS = [
-  "q-ring", "tanko", "groundrules", "lookout", "cryo", "mineui", "protonshift", "sites", "atelier", "deathbell",
-  "desktop", "infra", "marketing", "aibou", "niwa", "shiori", "kansei", "synthesist", "blazedtravel", "job-hunt",
-];
+/** README "Board": the fields and options a project needs. */
+export const BOARD_HELP_URL = "https://github.com/I4cTime/kansei#board";
+
+/** The connected GitHub Project (prefs.board); null = not configured. */
+export const boardConfigAtom = atom((get) => get(prefsAtom).board);
 
 /** The last snapshot (cached or fetched); null before board.json was read. */
 export const snapshotAtom = atom<BoardSnapshot | null>(null);
@@ -37,9 +37,12 @@ export function laneOf(i: BoardItem): BoardStatus {
   return i.state === "closed" ? "Done" : "Backlog";
 }
 
-/** Area options to offer: the board's, else the fallback list, plus any extra names in use. */
-export function areaOptions(snapshot: BoardSnapshot | null, extra: (string | null)[] = []): string[] {
-  const base = snapshot?.areas.length ? snapshot.areas : FALLBACK_AREAS;
+/**
+ * Area options to offer: the board's, else `fallback` (the workspace project
+ * names, before the first fetch or without a board), plus any extra names in use.
+ */
+export function areaOptions(snapshot: BoardSnapshot | null, extra: (string | null)[] = [], fallback: string[] = []): string[] {
+  const base = snapshot?.areas.length ? snapshot.areas : fallback;
   const out = [...base];
   for (const a of extra) if (a && !out.includes(a)) out.push(a);
   return out;
@@ -117,8 +120,33 @@ export function isOverdue(i: BoardItem, today: string): boolean {
 export const epicProgress = (i: BoardItem) => `${i.subIssues.completed}/${i.subIssues.total}`;
 
 /** The repo short name, or the area for items in the hub repo (epics). */
-export function itemChip(i: BoardItem): string | null {
-  return i.repo === HUB_REPO ? i.area : repoShort(i.repo);
+export function itemChip(i: BoardItem, hubRepo: string | null): string | null {
+  return i.repo === hubRepo ? i.area : repoShort(i.repo);
+}
+
+/** The names of the workspace projects (not groups or subprojects), sorted, for area pickers. */
+export function projectNames(tree: WorkspaceNode[]): string[] {
+  const names = new Set<string>();
+  for (const r of indexTree(tree).values()) if (r.node.kind === "project") names.add(r.node.name);
+  return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
+const FIELD_EFFECT: Record<string, string> = {
+  Status: "lanes do not work",
+  Kind: "epics and tasks cannot be told apart",
+  Area: "epics have no project",
+  Scheduled: "tasks cannot be scheduled",
+  Order: "ordering is disabled",
+};
+
+/** One toast line for what a connected project lacks, or null when it has everything. */
+export function setupWarning(setup: Pick<BoardSetup, "missingFields" | "missingOptions">): string | null {
+  const fields = setup.missingFields.map((f) => `The project has no ${f} field; ${FIELD_EFFECT[f] ?? "the panels need it"}.`);
+  const options = Object.entries(setup.missingOptions)
+    .filter(([, o]) => o.length > 0)
+    .map(([f, o]) => `${f} lacks the option${o.length === 1 ? "" : "s"} ${o.join(", ")}.`);
+  const all = [...fields, ...options];
+  return all.length > 0 ? all.join(" ") : null;
 }
 
 /**
@@ -139,9 +167,9 @@ export function areaProject(name: string | null | undefined, tree: WorkspaceNode
   return null;
 }
 
-/** The workspace project an item belongs to: its Area first, then its repo name. */
-export function itemProject(i: BoardItem, tree: WorkspaceNode[], registry: Registry): string | null {
-  return areaProject(i.area, tree, registry) ?? (i.repo === HUB_REPO ? null : areaProject(repoShort(i.repo), tree, registry));
+/** The workspace project an item belongs to: its Area first, then its repo name (not for the hub repo). */
+export function itemProject(i: BoardItem, tree: WorkspaceNode[], registry: Registry, hubRepo: string | null): string | null {
+  return areaProject(i.area, tree, registry) ?? (i.repo === hubRepo ? null : areaProject(repoShort(i.repo), tree, registry));
 }
 
 /** The snapshot with one item replaced (or added). */

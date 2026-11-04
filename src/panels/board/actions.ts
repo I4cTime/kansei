@@ -1,8 +1,10 @@
-// Board side effects: load the cache at boot, fetch through gh, and the
-// optimistic field writes (rolled back with a toast when GitHub refuses).
-import { board, type BoardField, type BoardItem, type BoardSnapshot } from "../../lib/ipc";
+// Board side effects: connect a project (prefs.board), load the cache at
+// boot, fetch through gh, and the optimistic field writes (rolled back with a
+// toast when GitHub refuses). Without a connected project nothing is fetched.
+import { board, type BoardField, type BoardItem, type BoardSetup, type BoardSnapshot } from "../../lib/ipc";
 import { store, toastError, toastInfo } from "../../app/store";
-import { boardLoadingAtom, ghStatusAtom, patchItem, snapshotAtom, withItem } from "./model";
+import { savePrefs } from "../../app/prefs";
+import { boardConfigAtom, boardLoadingAtom, ghStatusAtom, patchItem, snapshotAtom, withItem } from "./model";
 
 const REFRESH_MS = 10 * 60_000;
 
@@ -13,6 +15,7 @@ let fetching: Promise<BoardSnapshot | null> | null = null;
  * items shown and records the error on the snapshot; `loud` toasts it.
  */
 export function refreshBoard(force = false, loud = force): Promise<BoardSnapshot | null> {
+  if (!store.get(boardConfigAtom)) return Promise.resolve(null);
   if (fetching && !force) return fetching;
   let run: Promise<BoardSnapshot | null> | null = null;
   run = (async () => {
@@ -45,8 +48,32 @@ export async function refreshGhStatus(): Promise<void> {
   }
 }
 
+/**
+ * Connect a GitHub Project: resolve it (board_configure), save the config into
+ * prefs.json (written before the fetch, Rust reads it per call), drop the old
+ * snapshot and fetch the new board. Returns the setup so the caller can say
+ * what the project lacks (setupWarning). Rejects when it cannot be resolved.
+ */
+export async function configureBoard(a: { owner: string; projectNumber: number; hubRepo: string }): Promise<BoardSetup> {
+  const setup = await board.configure({ owner: a.owner.trim(), projectNumber: a.projectNumber, hubRepo: a.hubRepo.trim() });
+  await savePrefs({ board: setup.config });
+  store.set(snapshotAtom, null);
+  void refreshGhStatus();
+  await refreshBoard(true, true);
+  return setup;
+}
+
+/** Forget the connected project (prefs.board = null) and the snapshot. */
+export async function disconnectBoard(): Promise<void> {
+  await savePrefs({ board: null });
+  store.set(snapshotAtom, null);
+}
+
 let started = false;
-/** At boot: show board.json, check gh, fetch once, then every 10 min while visible. */
+/**
+ * At boot: show board.json, check gh, fetch once, then every 10 min while
+ * visible. The fetches are skipped while no project is connected.
+ */
 export function startBoard(): void {
   if (started) return;
   started = true;
@@ -58,10 +85,10 @@ export function startBoard(): void {
       toastError(e, "Could not read board.json");
     }
     await refreshGhStatus();
-    await refreshBoard(false, false);
+    if (store.get(boardConfigAtom)) await refreshBoard(false, false);
   })();
   window.setInterval(() => {
-    if (!document.hidden) void refreshBoard(false, false);
+    if (!document.hidden && store.get(boardConfigAtom)) void refreshBoard(false, false);
   }, REFRESH_MS);
 }
 
