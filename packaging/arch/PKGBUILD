@@ -1,7 +1,7 @@
 # Maintainer: I4C Studio <i4c.studio.dev@gmail.com>
 
 pkgname=kansei
-pkgver=0.1.0.r42.gf74e432
+pkgver=0.1.0.r45.gf613813
 pkgrel=1
 pkgdesc='Claude Code cockpit: terminal tabs plus a sidebar that edits Claude memory, MCP servers, agents, skills, hooks and settings'
 arch=('x86_64')
@@ -9,8 +9,8 @@ url='https://github.com/I4cTime/kansei'
 # Renamed from tsukue on 2026-11-03: pacman swaps the old package out.
 conflicts=('tsukue')
 replaces=('tsukue')
-# The repo has no LICENSE file yet, so no licence text is installed.
-license=('custom')
+# AGPL-3.0-only; the LICENSE file is installed under /usr/share/licenses.
+license=('AGPL-3.0-only')
 depends=(
   'webkit2gtk-4.1'
   'gtk3'

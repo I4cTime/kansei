@@ -1,0 +1,115 @@
+name: Bug Report
+description: Report a bug or unexpected behaviour in Kansei
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Kansei is a personal tool built and used on Omarchy (Arch + Hyprland); reports from other setups are welcome, just say what you run.
+
+        **If this is a security vulnerability, do NOT open an issue.** Use the [security reporting process](https://github.com/I4cTime/kansei/security/policy) instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: Kansei commit or package version
+      description: "`git rev-parse --short HEAD` in your checkout, or `pacman -Q kansei`."
+      placeholder: "f74e432 / kansei 0.1.0.r42.gf74e432-1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of Kansei is affected?
+      options:
+        - Terminal tabs / pty
+        - Projects
+        - Board
+        - Calendar
+        - Sessions
+        - Memory
+        - Rules
+        - MCPs
+        - Agents
+        - Skills
+        - Workflows
+        - Hooks
+        - Settings
+        - Themes / Omarchy
+        - Window, rendering or hang (WebKitGTK, GPU)
+        - Packaging / build
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear description of the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to reproduce the behaviour.
+      placeholder: |
+        1. Open the MCPs panel
+        2. Switch to Project scope
+        3. Save a server
+        4. See error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: What happened instead. Include error messages or toasts.
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: "Distro, compositor or desktop, GPU and driver."
+      placeholder: "Omarchy (Arch + Hyprland), NVIDIA 580"
+    validations:
+      required: true
+
+  - type: input
+    id: claude
+    attributes:
+      label: Claude Code version
+      description: "Output of `claude --version`."
+    validations:
+      required: false
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: "Relevant lines from `~/.local/share/kansei/kansei.log`, and for a hang the file in `~/.local/share/kansei/stalls/` (see README, Diagnosing a hang). Check for secrets before pasting."
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, related issues, anything else.
+    validations:
+      required: false

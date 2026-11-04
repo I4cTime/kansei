@@ -1,0 +1,79 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for Kansei
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have an idea for Kansei? Please describe what you'd like and why.
+
+        Kansei is a personal tool, so changes to the author's own workflow (the Board and Calendar wiring, the keyboard map, the panel order) are discussed here first, before any PR.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of Kansei does this relate to?
+      options:
+        - Terminal tabs / pty
+        - Projects
+        - Board
+        - Calendar
+        - Sessions
+        - Memory
+        - Rules
+        - MCPs
+        - Agents
+        - Skills
+        - Workflows
+        - Hooks
+        - Settings
+        - Themes / Omarchy
+        - Keyboard
+        - Packaging / build
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What problem does this solve, or what workflow does it improve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe what you'd like to happen. Sketches, command shapes (see CONTRACT.md) or config examples are welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+
+  - type: dropdown
+    id: willing
+    attributes:
+      label: Would you be willing to submit a PR?
+      options:
+        - "Yes"
+        - "Yes, with guidance"
+        - "No"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Anything else - mockups, links, related issues.
+    validations:
+      required: false

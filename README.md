@@ -1,13 +1,162 @@
-# Kansei
+<h1 align="center">Kansei</h1>
 
-A personal Claude Code cockpit for Omarchy (formerly Tsukue). One window: a left sidebar that
-edits everything Claude Code reads (memory, rules, MCP servers, agents, skills,
-workflows, hooks, settings) and shows the work plan (the I4C board and a
-calendar), a top rail of terminal tabs, and a terminal filling the rest, each
-tab running `claude` in a folder of your choice.
+<p align="center">
+  <b>A Claude Code cockpit for Omarchy.</b><br>
+  One window: a sidebar that edits everything Claude Code reads, a rail of terminal tabs that run <code>claude</code>, and the terminal filling the rest.
+</p>
 
-Tauri 2 + React 19 + Tailwind v4 + xterm.js + CodeMirror 6. Rust pty via
-portable-pty. Design of record: `CONTRACT.md`.
+<p align="center">
+  <a href="https://github.com/I4cTime/kansei/actions/workflows/ci.yml"><img src="https://github.com/I4cTime/kansei/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0"></a>
+  <img src="https://img.shields.io/badge/platform-Linux-informational" alt="Platform: Linux">
+</p>
+
+<p align="center">
+  <a href="#what-it-is">What it is</a> &middot;
+  <a href="#status">Status</a> &middot;
+  <a href="#install">Install</a> &middot;
+  <a href="#panels">Panels</a> &middot;
+  <a href="#keyboard">Keyboard</a> &middot;
+  <a href="#development">Development</a> &middot;
+  <a href="#license">License</a>
+</p>
+
+---
+
+## What it is
+
+Kansei (管制, "control", as in a control tower) is a personal Claude Code
+cockpit for [Omarchy](https://omarchy.org) (Arch + Hyprland). It was called
+Tsukue ("desk") until 2026-11-03.
+
+Claude Code keeps its state in plain files: `CLAUDE.md` memory, rules, MCP
+servers in `~/.claude.json`, agents, skills, workflows, hooks and
+`settings.json`, spread over `~/.claude` and every project's `.claude/`.
+Kansei puts all of that in a left sidebar where you can read and edit the real
+files, next to the terminals you run `claude` in. Each tab on the top rail is
+a pty running `claude` (or a login shell) in a folder you pick, and all tabs
+stay alive with their scrollback while you switch. Projects, sessions, a work
+board and a calendar sit in the same sidebar, and the whole window can follow
+the live Omarchy theme or wear one of seven sci-fi presets.
+
+Built with Tauri 2 + React 19 + Tailwind v4 + xterm.js + CodeMirror 6, with
+the pty in Rust (portable-pty). No Electron, no local HTTP server.
+
+<p align="center">
+  <img src="docs/screenshots/night-city.png" alt="Kansei with the Night City preset: the Settings Appearance section in the sidebar and a colour demo in the terminal" width="49%">
+  <img src="docs/screenshots/grid.png" alt="Kansei with The Grid preset: the Settings Appearance section in the sidebar and a colour demo in the terminal" width="49%">
+</p>
+<p align="center"><sub>Night City (left) and The Grid (right), two of the seven presets.</sub></p>
+
+## Status
+
+Kansei is a personal tool published as-is, not a product (yet). Read this
+before you install it:
+
+- **No releases, no binaries.** Build from source (see [Install](#install)).
+  The version is 0.1.x and everything is on `main`.
+- **Linux only.** The webview is WebKitGTK. It is built and used every day on
+  Omarchy with an NVIDIA GPU, and `src-tauri/src/main.rs` carries
+  NVIDIA/WebKitGTK workarounds for that setup (see [Run](#run)). Other
+  distros and GPUs should work but get no testing.
+- **Board and Calendar are wired to the author's own GitHub Project.** The
+  owner, project id, hub repo and board URL are constants (`OWNER`,
+  `PROJECT_ID`, `HUB_REPO`, `BOARD_URL` in `src-tauri/src/board.rs`, and
+  `BOARD_URL` in `src/panels/board/model.ts`). To use them with your own
+  board you change those and rebuild; making this configurable is an open
+  item. See [Board](#board).
+- **Everything else is generic Claude Code tooling**: Projects, Sessions,
+  Memory, Rules, MCPs, Agents, Skills, Workflows, Hooks, Settings, Themes and
+  the terminal tabs work on any machine with Claude Code, and they edit the
+  real files under `~/.claude` and `~/.claude.json`. Kansei never touches
+  `~/.claude/.credentials.json`.
+- Some defaults follow the author's layout (workspace root `~/Develop`, a
+  `~/.local/bin/claude` launcher when one exists); both are settings.
+
+## Install
+
+### Requirements
+
+- [Claude Code](https://claude.com/claude-code) (`claude` on
+  your `PATH`): what the terminal tabs run.
+- Node 22+ and [pnpm](https://pnpm.io) (the repo pins `pnpm@12.3.4` through
+  `packageManager`).
+- Rust stable via [rustup](https://rustup.rs).
+- `webkit2gtk-4.1` and the other
+  [Tauri Linux prerequisites](https://v2.tauri.app/start/prerequisites/#linux).
+- The [`gh` CLI](https://cli.github.com), logged in with the `project` scope,
+  for the Board panel only.
+- Omarchy is optional: when it is present, themes can follow it.
+
+### Arch Linux (and Omarchy)
+
+The PKGBUILD in `packaging/arch` builds the current `main` from GitHub and
+installs `/usr/bin/kansei`, a desktop entry and icons:
+
+```sh
+git clone https://github.com/I4cTime/kansei.git
+cd kansei/packaging/arch
+makepkg -si
+```
+
+To build your local checkout instead (its committed state, not uncommitted
+edits), point `KANSEI_SOURCE` at it:
+
+```sh
+cd packaging/arch
+KANSEI_SOURCE=file://$PWD/../.. makepkg -f
+sudo pacman -U kansei-*.pkg.tar.zst
+```
+
+More in [Packaging](#packaging).
+
+### Other distros
+
+Install the Tauri prerequisites for your distro, then:
+
+```sh
+pnpm install
+pnpm tauri build --no-bundle   # binary at src-tauri/target/release/kansei
+pnpm tauri build               # or deb, rpm and AppImage bundles
+```
+
+### From a checkout, in dev mode
+
+```sh
+pnpm install
+pnpm tauri dev   # or ./run-dev.sh, see Run below
+```
+
+## Panels
+
+The sidebar has twelve panels. The first ten have Ctrl+Shift+1..9 and 0
+shortcuts (see [Keyboard](#keyboard)).
+
+- **Projects**: every project under your workspace roots as a tree; open one
+  as a Claude tab, open it with related projects, describe and link them. See
+  [Projects and workspaces](#projects-and-workspaces).
+- **Board**: the GitHub Project the author plans on (epics, tasks, lanes,
+  dates), read and edited through `gh`. See [Board](#board).
+- **Calendar**: a weekly rhythm, per-day notes and the board's scheduled
+  tasks, written out to `SCHEDULE.md`. See [Calendar](#calendar).
+- **Sessions**: Claude Code history, live sessions and transcripts; resume
+  one into a tab.
+- **Memory**: the `CLAUDE.md` files and the per-project memory folders under
+  `~/.claude/projects`.
+- **Rules**: user and project `.claude/rules` files, with their path globs.
+- **MCPs**: MCP servers in `~/.claude.json` and `.mcp.json`, user and project
+  scope, plus a read-only list of plugin, claude.ai and built-in servers.
+- **Agents**: subagent definitions in `~/.claude/agents` and the project's
+  `.claude/agents`.
+- **Skills**: skills in `~/.claude/skills` and the project's `.claude/skills`.
+- **Workflows**: the workflow scripts in `~/.claude/workflows`.
+- **Hooks**: the hooks in the user `settings.json` or the project's
+  `.claude/settings.json`.
+- **Settings**: Claude Code's settings files (and a project's `CLAUDE.md`
+  files), plus Kansei's own preferences (Appearance, This app).
+
+Rules, Agents, Skills, MCPs, Hooks and Settings have a User / Project scope
+switch; Project means the folder of the active tab.
 
 ## Run
 
@@ -28,7 +177,7 @@ DMA-BUF renderer die with "Missing acquire timeline" (the software fallback
 hidden Hyprland workspace blocks the main thread in eglSwapBuffers until the
 workspace is shown again ("Application Not Responding"). `run-dev.sh` sets
 `KANSEI_DRIVER=/tmp/kansei-driver.sock`, a debug-only socket that runs
-JavaScript inside the webview for UI checks:
+JavaScript inside the webview for UI checks (release builds ignore it):
 
 ```sh
 ./drive.py 'return t.store.get(t.tabs.tabsAtom).map(x => x.title)'
@@ -37,8 +186,9 @@ JavaScript inside the webview for UI checks:
 
 `run-dev.sh` records the dev process group in `/tmp/kansei-dev.pid` and on the
 next run stops only that group (plus whatever holds the Vite port 1420), never
-processes by name, so an installed `kansei` keeps running. `drive.py --shot`
-prefers the dev window (`target/debug/kansei`) when both are open.
+processes by name, so an installed `kansei` keeps running. `./run-dev.sh stop`
+only stops it. `drive.py --shot` prefers the dev window (`target/debug/kansei`)
+when both are open.
 
 Claude tabs run `~/.local/bin/claude` when that file is executable (a launcher
 that can load MCP credentials before starting claude), otherwise `claude` from
@@ -92,6 +242,15 @@ project that matches the area or repo name. The header has refresh, an "as of"
 stamp, New task (gh issue create, linked under its epic, added to the board as
 a Task) and New epic.
 
+That board is the author's own and is hard-wired today (`OWNER`,
+`PROJECT_NUMBER`, `PROJECT_ID`, `HUB_REPO` and `BOARD_URL` in
+`src-tauri/src/board.rs`, `HUB_REPO` and `BOARD_URL` in
+`src/panels/board/model.ts`). To point it at your own board, change those
+constants and rebuild; your project needs the fields Status (the five lanes
+above), Kind (Epic, Task), Area, Scheduled (date) and Order (number).
+CONTRACT.md, "Board and Calendar", has the full model. A settings-driven
+board is an open item.
+
 All GitHub traffic goes through the `gh` CLI, run off the main thread and
 always without `GITHUB_TOKEN` in its environment (a Claude session's token is
 read only; the keyring login needs the `project` scope:
@@ -134,11 +293,11 @@ Settings, Appearance. A theme is a palette in the shape of an Omarchy
   `~/.local/state/omarchy/current` and re-applied the moment `omarchy theme set`
   swaps it. Chrome and every open terminal retint together, with the same
   colour mapping Omarchy uses for Alacritty.
-- **Presets**: seven bundled sci-fi palettes - Night City (cyberpunk), Grid
-  (Tron), Phosphor (Matrix), Replicant (Blade Runner amber CRT), Mother (Alien),
-  NERV (Evangelion) and Outrun (synthwave). Some carry static visual effects
-  (accent glow, a faint scanline overlay on the terminal, square corners) that
-  the Visual effects switch turns off.
+- **Presets**: seven bundled sci-fi palettes - Night City (cyberpunk), The
+  Grid (Tron), Phosphor (Matrix), Replicant (Blade Runner amber CRT), Mother
+  (Alien), NERV (Evangelion) and Outrun (synthwave). Some carry static visual
+  effects (accent glow, a faint scanline overlay on the terminal, square
+  corners) that the Visual effects switch turns off.
 
 Claude Code in the tabs takes its colours from its own theme file, so with
 "Theme Claude Code too" on (the default) Kansei renders
@@ -150,19 +309,32 @@ the current wallpaper as its background) and "Export and apply" runs
 `omarchy theme set` on it, so the whole desktop follows Kansei instead of the
 other way round. Spec: `CONTRACT.md`, "Themes".
 
+## Keyboard
+
+Ctrl+Shift+T new tab, Ctrl+Shift+W close, Ctrl+PageUp/PageDown switch,
+Ctrl+Shift+B toggle sidebar, Ctrl+Shift+1..9 and 0 jump to the first ten
+sections in nav order (Projects, Board, Calendar, Sessions, Memory, Rules,
+MCPs, Agents, Skills, Workflows), Ctrl+Shift+H opens Hooks and Ctrl+Shift+,
+Settings, Esc closes the editor sheet and the Projects, Board and Calendar
+sheets, Ctrl+S saves in the editor, Ctrl+Enter saves the Edit sheet,
+Ctrl+Shift+C / V copy and paste in the terminal.
+
 ## Packaging
 
-An Arch Linux package builds from the committed state of this checkout (not
-uncommitted edits), so commit first:
+The Arch Linux package (`packaging/arch/PKGBUILD`) builds from git, so it
+sees committed work only: by default `main` on GitHub, or your own checkout
+with `KANSEI_SOURCE=file://<path>` (see [Install](#arch-linux-and-omarchy)).
+Commit first when building a local checkout.
 
 ```sh
 cd packaging/arch && makepkg -si
 ```
 
-That installs `/usr/bin/kansei`, a desktop entry and hicolor icons. Node and
-pnpm from mise are not pacman packages, so `makepkg -si` would try to install
-the repo `nodejs` and `pnpm`; to build with the mise ones instead, use
-`makepkg -f --nodeps` and then `sudo pacman -U kansei-*.pkg.tar.zst`.
+That installs `/usr/bin/kansei`, a desktop entry and hicolor icons, and
+replaces an older `tsukue` package. Node and pnpm from mise are not pacman
+packages, so `makepkg -si` would try to install the repo `nodejs` and `pnpm`;
+to build with the mise ones instead, use `makepkg -f --nodeps` and then
+`sudo pacman -U kansei-*.pkg.tar.zst`.
 
 ## Diagnosing a hang
 
@@ -194,24 +366,43 @@ sudo gdb -p <pid> -batch -ex "thread apply all bt"
 Debug builds also have a `debug_block_main` command to force a stall:
 `./drive.py 't.invoke("debug_block_main", {ms: 5000}); return 1'`.
 
-## Checks
+## Development
+
+Set up as in [Install](#install), then `pnpm tauri dev` or `./run-dev.sh`
+(see [Run](#run)). Contributions are welcome within the limits in
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+### Checks
 
 ```sh
 pnpm typecheck && pnpm test && pnpm build
-cd src-tauri && cargo build && cargo test && cargo clippy --all-targets
+cd src-tauri && cargo fmt --all --check && cargo clippy --all-targets -- -D warnings && cargo test
 ```
 
 `pnpm test` runs the vitest unit tests (calendar grids, plan precedence,
-board grouping, `areaProject`, shortcuts). The Rust board tests replace the gh
-runner, so no test talks to GitHub; `cargo test live_board_read -- --ignored`
-reads (only reads) the real board.
+board grouping, `areaProject`, shortcuts). `cargo test` needs the Tauri Linux
+system packages, since the crate depends on `tauri`. The Rust board tests
+replace the gh runner, so no test talks to GitHub;
+`cargo test live_board_read -- --ignored` reads (only reads) the real board.
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same
+checks on every push to `main` and every pull request into it.
 
-## Keyboard
+### Design of record
 
-Ctrl+Shift+T new tab, Ctrl+Shift+W close, Ctrl+PageUp/PageDown switch,
-Ctrl+Shift+B toggle sidebar, Ctrl+Shift+1..9 and 0 jump to the first ten
-sections in nav order (Projects, Board, Calendar, Sessions, Memory, Rules,
-MCPs, Agents, Skills, Workflows), Ctrl+Shift+H opens Hooks and Ctrl+Shift+,
-Settings, Esc closes the editor sheet and the Projects, Board and Calendar
-sheets, Ctrl+S saves in the editor, Ctrl+Enter saves the Edit sheet,
-Ctrl+Shift+C / V copy and paste in the terminal.
+[`CONTRACT.md`](CONTRACT.md) is the design of record: layout, Rust commands,
+events, module ownership, persistence, tokens, and one section per feature
+(Sessions, Projects, Workspaces, Board and Calendar, Themes). Change the
+contract first, then the code, and keep the two in agreement in the same
+commit.
+
+### House style
+
+No em dashes in any copy (UI strings, docs, commit messages): use a plain
+hyphen.
+
+## License
+
+AGPL-3.0-only - see [LICENSE](LICENSE).
+
+Security issues: see [SECURITY.md](SECURITY.md). Changes: see
+[CHANGELOG.md](CHANGELOG.md).

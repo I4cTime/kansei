@@ -249,7 +249,7 @@ for the terminal (Omarchy ships it).
   lines to `<appData>/kansei.log` (rotated to `.1` past 1 MB): startup env, pty
   spawn/exit/spawn failure, exit. Debug builds register `debug_block_main(ms)`,
   which sleeps on the main thread to test it.
-- Known gaps: CSP is still null; MCP `env` values reach the webview (masked in
+- Known gaps: CSP set in tauri.conf.json (2026-10-31); MCP `env` values reach the webview (masked in
   the UI behind an eye toggle); a running `claude` can rewrite `~/.claude.json`
   over an MCP edit, so restart sessions after editing MCPs.
 
