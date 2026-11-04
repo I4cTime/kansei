@@ -165,6 +165,13 @@ shortcuts (see [Keyboard](#keyboard)).
 Rules, Agents, Skills, MCPs, Hooks and Settings have a User / Project scope
 switch; Project means the folder of the active tab.
 
+**Command palette**: Ctrl+Shift+P opens a fuzzy palette over the terminal
+column: switch, open, close, restart or rename tabs, open any panel, open a
+project (or open it with its related projects), resume one of the 40 most
+recent sessions, start, review or finish board tasks, and switch themes. Type
+to filter, Up/Down to move, Enter to run, Esc to close; the commands you ran
+last come first. Ctrl+K stays with the shell.
+
 ## Run
 
 ```sh
@@ -367,8 +374,9 @@ Ctrl+Shift+T new tab, Ctrl+Shift+W close, Ctrl+PageUp/PageDown switch,
 Ctrl+Shift+B toggle sidebar, Ctrl+Shift+1..9 and 0 jump to the first ten
 sections in nav order (Projects, Board, Calendar, Sessions, Memory, Rules,
 MCPs, Agents, Skills, Workflows), Ctrl+Shift+H opens Hooks and Ctrl+Shift+,
-Settings, Esc closes the editor sheet and the Projects, Board and Calendar
-sheets, Ctrl+S saves in the editor, Ctrl+Enter saves the Edit sheet,
+Settings, Ctrl+Shift+P toggles the command palette (see
+[Panels](#panels)), Esc closes the editor sheet, the palette and the
+Projects, Board and Calendar sheets, Ctrl+S saves in the editor, Ctrl+Enter saves the Edit sheet,
 Ctrl+Shift+C / V copy and paste in the terminal.
 
 ## Packaging

@@ -8,6 +8,14 @@ releases yet; everything so far is on `main` as 0.1.x.
 
 ### Added
 
+- **Command palette** (2026-11-04). Ctrl+Shift+P opens a fuzzy palette over
+  the terminal: switch to a tab, open a new, shell, closed, restarted or
+  renamed one, open any panel or toggle the sidebar, open a project (or open
+  it with its related projects), resume one of the 40 most recent sessions,
+  start, review or finish board tasks, refresh the board, and switch the
+  theme, visual effects or the Claude Code theme. Prefix matches rank first,
+  then word starts; the empty palette lists the last eight commands you ran
+  (kept in `prefs.json` as `paletteRecent`). Ctrl+K stays with the shell.
 - **Release pipeline** (2026-11-04). Pushing a `vX.Y.Z` tag builds an
   AppImage, a deb, an rpm and an Arch package and publishes them as a GitHub
   release, after checking the tag against the version in

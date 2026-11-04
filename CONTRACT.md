@@ -1382,3 +1382,36 @@ stable, disabled reasons, recent ordering and the 8-item cap.
 README Keyboard section and a "Command palette" line under Panels or Run;
 CONTRACT "Keyboard" gets the shortcut; CHANGELOG under Unreleased; prefs.ts doc
 comment for `paletteRecent`.
+
+### As implemented (2026-11-04)
+
+- Gap count = characters skipped between two matched characters (none before
+  the first). The best placement is found by a small DP, so a later word start
+  can beat an earlier mid-word hit. Word starts include camelCase humps.
+- The 40-row cap applies to a typed query; the empty query lists recent (at
+  most 8), Tabs and Panels complete and the other groups at 6 each, uncapped,
+  and a recent command is not repeated in its group.
+- Keywords: tabs carry their title, panels their label, projects their name
+  and relative path, sessions their project label, board tasks their title and
+  `owner/repo#n`, themes their name; so typing the start of a name is a prefix
+  match (100) even after "Open " or "Theme: ".
+- Tabs: New tab is the folder picker (Ctrl+Shift+T); New shell tab opens a
+  login shell in the active tab's folder (home without one). Close, Restart
+  and Rename act on the active tab and are disabled ("No tab open"); Restart
+  only for a dead tab ("Still running"). Rename sets `renameRequestAtom`
+  (`requestRename` in `src/app/tabs.ts`) and the rail item enters the same
+  edit mode as a double click.
+- Projects: Open runs `claude` (not `newTabCommand`) titled with the project
+  name; Open with related calls `openWithSheet` (`src/panels/projects/openWith.tsx`,
+  shared with the panel's Open with...).
+- Sessions: the Sessions panel publishes its list in `sessionsListAtom`
+  (`src/panels/sessions/model.ts`) while mounted and clears it on unmount; the
+  palette uses it, else fetches `sessions.list()` once per open.
+- Board hints use the short repo (`aibou#4`); lane moves call
+  `setItemField(itemId, "status", ...)`; Refresh board forces a fetch.
+- Themes: the toggles hint "on" / "off"; theme changes go through `savePrefs`.
+- Ctrl+Shift+P while another overlay is open toasts "Close the open sheet
+  first" (as `openSheet`). Closing without running a command (Esc, backdrop)
+  focuses the active terminal again.
+- Dev driver: `t.palette.buildCommands()` returns the live commands (no
+  arguments), plus `rank(commands, query, recent)`.
