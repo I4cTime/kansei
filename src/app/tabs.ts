@@ -7,11 +7,11 @@ import { files, pty } from "../lib/ipc";
 import { markTabSeen } from "./activity";
 import { CLAUDE, prefsAtom } from "./prefs";
 import { basename, debounce, getPaths, joinPath, store, toastError, uuid } from "./store";
-import { activeKeyAtom, getTab, tabsAtom, tabsRestoredAtom, updateTab, type Tab } from "./tabState";
+import { activeKeyAtom, getTab, renameRequestAtom, tabsAtom, tabsRestoredAtom, updateTab, type Tab } from "./tabState";
 import { disposeTerminal, restartTerminal } from "./terminals";
 
 export { CLAUDE } from "./prefs";
-export { activeKeyAtom, activeTabAtom, tabsAtom, tabsRestoredAtom, getTab, type Tab, type TabStatus } from "./tabState";
+export { activeKeyAtom, activeTabAtom, renameRequestAtom, tabsAtom, tabsRestoredAtom, getTab, type Tab, type TabStatus } from "./tabState";
 
 export type TabSpec = { cwd: string; command?: string; args?: string[]; title?: string };
 
@@ -104,6 +104,13 @@ export function renameTab(key: string, title: string) {
   const tab = getTab(key);
   if (!tab) return;
   updateTab(key, { title: title.trim() || titleFor(tab.cwd) });
+}
+
+/** Put the tab's rail item into edit mode, as a double click does; Enter or blur commits through renameTab. */
+export function requestRename(key: string) {
+  if (!getTab(key)) return;
+  activateTab(key);
+  store.set(renameRequestAtom, key);
 }
 
 export function activateTab(key: string) {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useAtomValue } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { Plus, X } from "lucide-react";
-import { activateTab, activeKeyAtom, closeTab, newTabWithPicker, renameTab, tabsAtom, type Tab } from "./tabs";
+import { activateTab, activeKeyAtom, closeTab, newTabWithPicker, renameRequestAtom, renameTab, tabsAtom, type Tab } from "./tabs";
 import { activityAtom, dotFor, gaugeFor, isExtended, tabActivity, type DotLook } from "./activity";
 import { prefsAtom } from "./prefs";
 import { IconButton } from "./ui";
@@ -44,6 +44,15 @@ function TabItem({ tab, active }: { tab: Tab; active: boolean }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(tab.title);
   const input = useRef<HTMLInputElement>(null);
+  const [renameRequest, setRenameRequest] = useAtom(renameRequestAtom);
+
+  // Rename asked for from elsewhere (the palette's Rename tab): same as a double click.
+  useEffect(() => {
+    if (renameRequest !== tab.key) return;
+    setRenameRequest(null);
+    setDraft(tab.title);
+    setEditing(true);
+  }, [renameRequest, tab.key, tab.title, setRenameRequest]);
 
   useEffect(() => {
     if (editing) {

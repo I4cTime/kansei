@@ -16,6 +16,7 @@ import { sessionsProjectFilterAtom } from "../sessions/model";
 import { addProjectWithPicker, hideProject, pinProject, unhideProject, unpinProject } from "./actions";
 import { collectPaths, filterRows, groupRows, mergeProjects, normPath, NO_FLAGS, queryWords, type ProjectFilter, type ProjectRow } from "./model";
 import { EditSheet, PickerSheet } from "./sheets";
+import { openWithSheet } from "./openWith";
 import {
   EMPTY_ENTRY,
   countProjects,
@@ -257,23 +258,7 @@ export function ProjectsPanel() {
     shell: (r) => r.exists && openTab({ cwd: r.path, command: SHELL_COMMAND.command, args: [...SHELL_COMMAND.args] }),
     openWith: (r, m) => {
       if (!r.exists) return;
-      const label = labelFor(r, m);
-      const own = new Set([r.path, ...r.aliases, m.ref?.node.path]);
-      const choices = items.filter((it) => !own.has(it.path));
-      openSheet((close) => (
-        <PickerSheet
-          title={`Open ${label} with...`}
-          subtitle={`claude --add-dir for each checked project, in ${tildify(r.path, home)}`}
-          items={choices}
-          initial={m.entry.related.filter((p) => choices.some((c) => c.path === p))}
-          confirmLabel="Open"
-          note="Related projects start checked. The new tab runs claude even when new tabs default to a shell."
-          onConfirm={(paths) => {
-            openTab({ cwd: r.path, command: CLAUDE, args: paths.flatMap((p) => ["--add-dir", p]), title: label });
-          }}
-          close={close}
-        />
-      ));
+      openWithSheet({ path: r.path, label: labelFor(r, m), items, exclude: [r.path, ...r.aliases, m.ref?.node.path], related: m.entry.related, home });
     },
     resume: (r, m) => {
       if (!r.exists || !r.lastSessionId) return;
