@@ -1,3 +1,4 @@
+mod activity;
 mod board;
 mod files;
 mod mcp;
@@ -25,6 +26,7 @@ pub fn run() {
             driver::start(app.handle());
             watchdog::start(app.handle());
             theme::start(app.handle());
+            activity::start(app.handle());
             board::startup_render();
             Ok(())
         })
@@ -69,6 +71,7 @@ pub fn run() {
             board::activity_days,
             theme::theme_omarchy,
             theme::theme_export_omarchy,
+            activity::notify,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
