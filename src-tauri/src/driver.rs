@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixListener;
-use std::sync::{mpsc, Mutex};
+use std::sync::{Mutex, mpsc};
 use std::time::Duration;
 
 use tauri::Manager;
@@ -24,7 +24,9 @@ pub fn start(app: &tauri::AppHandle) {
     if !cfg!(debug_assertions) {
         return;
     }
-    let Some(path) = std::env::var_os("KANSEI_DRIVER") else { return };
+    let Some(path) = std::env::var_os("KANSEI_DRIVER") else {
+        return;
+    };
     let _ = std::fs::remove_file(&path);
     let listener = match UnixListener::bind(&path) {
         Ok(l) => l,
@@ -39,7 +41,9 @@ pub fn start(app: &tauri::AppHandle) {
         let mut seq = 0u64;
         for conn in listener.incoming() {
             let Ok(stream) = conn else { continue };
-            let Ok(reader_stream) = stream.try_clone() else { continue };
+            let Ok(reader_stream) = stream.try_clone() else {
+                continue;
+            };
             let mut reader = BufReader::new(reader_stream);
             let mut out = stream;
             let mut line = String::new();

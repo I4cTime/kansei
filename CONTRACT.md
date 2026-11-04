@@ -942,7 +942,10 @@ previous `theme` value is kept in `prefs.claudeThemeRestore` unless it already
 was `custom:kansei`. Switching to a built-in source restores it when
 settings.json still says `custom:kansei`, then clears the pref. Claude Code
 watches `~/.claude/themes` and hot-reloads. The write happens at most once per
-distinct rendered JSON (compare before writing).
+distinct rendered JSON (compare before writing). An instance only undoes what it
+set: with `claudeTheme` off and no `claudeThemeRestore` of its own, it leaves
+`settings.json` alone, so a dev build beside the packaged app cannot take down the
+theme the packaged app installed (seen 2026-11-03).
 
 ### Export to Omarchy
 

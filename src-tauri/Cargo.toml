@@ -1,8 +1,10 @@
 [package]
 name = "kansei"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Personal Claude Code cockpit for Omarchy: sidebar for everything Claude Code reads, terminal tabs that run claude, board, calendar, themes"
+authors = ["I4C Studio <i4c.studio.dev@gmail.com>"]
+license = "AGPL-3.0-only"
+repository = "https://github.com/I4cTime/kansei"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

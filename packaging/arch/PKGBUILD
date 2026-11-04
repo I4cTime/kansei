@@ -29,10 +29,12 @@ optdepends=('claude-code: the CLI the terminal tabs run')
 # Rust frames: makepkg must not strip, and build() turns off Cargo's own
 # release-profile strip. No separate debug package.
 options=('!debug' '!strip')
-# Local build from the committed checkout. A release PKGBUILD would use the
-# GitHub tarball instead, e.g.
+# Builds the committed HEAD of main from GitHub. For a local build from your
+# own checkout, point KANSEI_SOURCE at it:
+#   KANSEI_SOURCE=file://$HOME/Develop/lab/kansei makepkg -f
+# A tagged release would use the tarball instead:
 #   source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-source=("$pkgname::git+file:///home/i4ctime/Develop/lab/kansei"
+source=("$pkgname::git+${KANSEI_SOURCE:-https://github.com/I4cTime/kansei.git}"
         'kansei.desktop')
 sha256sums=('SKIP'
             '858133a35d403e552c39e791dec1bde5d55ad3b9e3ce1d8b2c1ea98b2f7e4c5a')

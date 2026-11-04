@@ -32,7 +32,10 @@ fn nvidia_workarounds() {
         if std::env::var_os("KANSEI_NVIDIA_ENV").is_some_and(|v| v == "keep") {
             return;
         }
-        for (key, value) in [("__NV_DISABLE_EXPLICIT_SYNC", "1"), ("__GL_SYNC_TO_VBLANK", "0")] {
+        for (key, value) in [
+            ("__NV_DISABLE_EXPLICIT_SYNC", "1"),
+            ("__GL_SYNC_TO_VBLANK", "0"),
+        ] {
             // SAFETY: single-threaded at this point, nothing has read the env yet.
             unsafe { std::env::set_var(key, value) };
         }

@@ -2,6 +2,20 @@
   "name": "kansei",
   "private": true,
   "version": "0.1.0",
+  "description": "Personal Claude Code cockpit for Omarchy: a sidebar that edits everything Claude Code reads, terminal tabs that run claude, the I4C board and calendar, Omarchy-aware themes",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/I4cTime/kansei.git"
+  },
+  "homepage": "https://github.com/I4cTime/kansei#readme",
+  "bugs": {
+    "url": "https://github.com/I4cTime/kansei/issues"
+  },
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -83,6 +83,9 @@ function applyPalette(root: HTMLElement, p: Palette, fx: Effects) {
 
 let lastClaudeJson: string | null = null;
 let claudeQueue: Promise<void> = Promise.resolve();
+/** True once this instance has pointed Claude at kansei.json. Only then may it undo it: another
+ *  instance (a dev build beside the packaged app) must not take down a theme it never set. */
+let claudeOwned = false;
 
 async function readJsonObject(path: string): Promise<Record<string, unknown>> {
   if (!(await files.exists(path))) return {};
@@ -112,6 +115,7 @@ async function claudeOn(p: Palette) {
     lastClaudeJson = json;
   }
   const s = await readJsonObject(paths.settings);
+  claudeOwned = true;
   if (s.theme === CLAUDE_THEME_SETTING) return;
   const prev = typeof s.theme === "string" ? s.theme : null;
   await writeJson(paths.settings, { ...s, theme: CLAUDE_THEME_SETTING });
@@ -120,6 +124,10 @@ async function claudeOn(p: Palette) {
 
 /** Undo claudeOn: restore the remembered theme while settings.json still says custom:kansei. */
 async function claudeOff() {
+  const restorePref = store.get(prefsAtom).claudeThemeRestore;
+  // Nothing to undo unless this instance set the theme (or a previous run of it left a restore value).
+  if (!claudeOwned && restorePref === null) return;
+  claudeOwned = false;
   const paths = await getPaths();
   const s = await readJsonObject(paths.settings);
   if (s.theme === CLAUDE_THEME_SETTING) {

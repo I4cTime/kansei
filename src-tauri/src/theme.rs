@@ -250,15 +250,14 @@ fn render_colors_toml_on(name: &str, palette: &BTreeMap<String, String>, date: &
         one_line.trim(),
         escape(mode)
     );
-    let skip = |k: &str| {
-        k == "mode" || k == "hyprland_active_border" || k == "hyprland_inactive_border"
-    };
-    let mut keys: Vec<&String> = palette
-        .keys()
-        .filter(|k| !skip(k) && bare_key(k))
-        .collect();
+    let skip =
+        |k: &str| k == "mode" || k == "hyprland_active_border" || k == "hyprland_inactive_border";
+    let mut keys: Vec<&String> = palette.keys().filter(|k| !skip(k) && bare_key(k)).collect();
     keys.sort_by_key(|k| {
-        let rank = KEY_ORDER.iter().position(|o| o == k).unwrap_or(KEY_ORDER.len());
+        let rank = KEY_ORDER
+            .iter()
+            .position(|o| o == k)
+            .unwrap_or(KEY_ORDER.len());
         (rank, k.as_str())
     });
     for k in keys {
@@ -501,22 +500,44 @@ spaced key = "#222222"
         fs::write(walls.join("1-city.png"), b"png").unwrap();
         std::os::unix::fs::symlink(walls.join("1-city.png"), current.join("background")).unwrap();
 
-        let palette = map(&[("accent", "#ff2a6d"), ("cyan", "#05d9e8"), ("muted", "#3b2f5c")]);
-        let dir = export_theme(&themes, &current, "kansei-night-city", "Night City", &palette)
-            .unwrap();
+        let palette = map(&[
+            ("accent", "#ff2a6d"),
+            ("cyan", "#05d9e8"),
+            ("muted", "#3b2f5c"),
+        ]);
+        let dir = export_theme(
+            &themes,
+            &current,
+            "kansei-night-city",
+            "Night City",
+            &palette,
+        )
+        .unwrap();
         assert_eq!(dir, themes.join("kansei-night-city"));
         let colors = fs::read_to_string(dir.join("colors.toml")).unwrap();
         assert!(colors.starts_with("# Night City, exported from Kansei "));
         assert!(colors.contains("accent = \"#ff2a6d\"\n"));
-        assert!(colors.contains("hyprland_active_border = \"rgba(ff2a6dee) rgba(05d9e8ee) 45deg\""));
-        assert_eq!(fs::read(dir.join("backgrounds/1-city.png")).unwrap(), b"png");
+        assert!(
+            colors.contains("hyprland_active_border = \"rgba(ff2a6dee) rgba(05d9e8ee) 45deg\"")
+        );
+        assert_eq!(
+            fs::read(dir.join("backgrounds/1-city.png")).unwrap(),
+            b"png"
+        );
 
         // A second export overwrites colors.toml and leaves a non-empty backgrounds/ alone.
         fs::write(walls.join("2-other.png"), b"other").unwrap();
         fs::remove_file(current.join("background")).unwrap();
         std::os::unix::fs::symlink(walls.join("2-other.png"), current.join("background")).unwrap();
         let palette2 = map(&[("accent", "#000000")]);
-        export_theme(&themes, &current, "kansei-night-city", "Night City", &palette2).unwrap();
+        export_theme(
+            &themes,
+            &current,
+            "kansei-night-city",
+            "Night City",
+            &palette2,
+        )
+        .unwrap();
         let colors = fs::read_to_string(dir.join("colors.toml")).unwrap();
         assert!(colors.contains("accent = \"#000000\""));
         assert!(!dir.join("backgrounds/2-other.png").exists());

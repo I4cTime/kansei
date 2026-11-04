@@ -56,7 +56,10 @@ pub fn app_data_dir() -> Result<PathBuf, String> {
 pub fn migrate_legacy_dirs() {
     if let Some(base) = dirs::data_dir() {
         merge_legacy_dir(&base.join("tsukue"), &base.join("kansei"));
-        merge_legacy_dir(&base.join("studio.i4c.tsukue"), &base.join("studio.i4c.kansei"));
+        merge_legacy_dir(
+            &base.join("studio.i4c.tsukue"),
+            &base.join("studio.i4c.kansei"),
+        );
     }
 }
 
@@ -72,11 +75,17 @@ fn merge_legacy_dir(old: &Path, new: &Path) {
     }
     if !new.exists() {
         if let Err(e) = fs::rename(old, new) {
-            eprintln!("kansei: could not move {} to {}: {e}", old.display(), new.display());
+            eprintln!(
+                "kansei: could not move {} to {}: {e}",
+                old.display(),
+                new.display()
+            );
         }
         return;
     }
-    let Ok(entries) = fs::read_dir(old) else { return };
+    let Ok(entries) = fs::read_dir(old) else {
+        return;
+    };
     for entry in entries.flatten() {
         let from = entry.path();
         let name = entry.file_name();
@@ -84,15 +93,20 @@ fn merge_legacy_dir(old: &Path, new: &Path) {
             continue;
         }
         let to = new.join(&name);
-        let newer = match (fs::metadata(&from).and_then(|m| m.modified()), fs::metadata(&to).and_then(|m| m.modified())) {
+        let newer = match (
+            fs::metadata(&from).and_then(|m| m.modified()),
+            fs::metadata(&to).and_then(|m| m.modified()),
+        ) {
             (Ok(a), Ok(b)) => a > b,
             (Ok(_), Err(_)) => true,
             _ => false,
         };
-        if newer {
-            if let Err(e) = fs::copy(&from, &to) {
-                eprintln!("kansei: could not copy {} to {}: {e}", from.display(), to.display());
-            }
+        if newer && let Err(e) = fs::copy(&from, &to) {
+            eprintln!(
+                "kansei: could not copy {} to {}: {e}",
+                from.display(),
+                to.display()
+            );
         }
     }
 }
@@ -744,7 +758,14 @@ mod tests {
         let h = f.home.to_string_lossy().to_string();
         assert!(r(&f, &format!("{h}/.claude"), Access::Read).is_ok());
         assert!(r(&f, &format!("{h}/.claude/agents/new/x.md"), Access::Write).is_ok());
-        assert!(r(&f, &format!("{h}/.claude/rules/frontend/react.md"), Access::Write).is_ok());
+        assert!(
+            r(
+                &f,
+                &format!("{h}/.claude/rules/frontend/react.md"),
+                Access::Write
+            )
+            .is_ok()
+        );
         assert!(r(&f, &format!("{h}/.claude.json"), Access::Write).is_ok());
         assert!(
             r(
@@ -1225,15 +1246,28 @@ mod tests {
         fs::write(old.join("tsukue.log"), "log2").unwrap();
         fs::write(old.join("tabs.json"), "v2").unwrap();
         let past = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
-        fs::File::open(new.join("tabs.json")).unwrap().set_modified(past).unwrap();
+        fs::File::open(new.join("tabs.json"))
+            .unwrap()
+            .set_modified(past)
+            .unwrap();
         fs::write(old.join("board.json"), "stale").unwrap();
-        fs::File::open(old.join("board.json")).unwrap().set_modified(past).unwrap();
+        fs::File::open(old.join("board.json"))
+            .unwrap()
+            .set_modified(past)
+            .unwrap();
         fs::write(new.join("board.json"), "fresh").unwrap();
         merge_legacy_dir(&old, &new);
         assert!(old.exists());
         assert_eq!(fs::read_to_string(new.join("tabs.json")).unwrap(), "v2");
-        assert_eq!(fs::read_to_string(new.join("prefs.json")).unwrap(), "old-only");
+        assert_eq!(
+            fs::read_to_string(new.join("prefs.json")).unwrap(),
+            "old-only"
+        );
         assert_eq!(fs::read_to_string(new.join("board.json")).unwrap(), "fresh");
-        assert_eq!(fs::read_to_string(new.join("tsukue.log")).unwrap(), "log", "logs are never merged");
+        assert_eq!(
+            fs::read_to_string(new.join("tsukue.log")).unwrap(),
+            "log",
+            "logs are never merged"
+        );
     }
 }

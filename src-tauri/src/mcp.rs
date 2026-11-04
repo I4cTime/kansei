@@ -966,7 +966,11 @@ mod tests {
                 ("devtools", "chrome-devtools", None, false),
             ]
         );
-        assert!(x.plugins[3].file.ends_with("devtools/1.11.0/.claude-plugin/plugin.json"));
+        assert!(
+            x.plugins[3]
+                .file
+                .ends_with("devtools/1.11.0/.claude-plugin/plugin.json")
+        );
         let v = &x.plugins[0];
         assert_eq!(v.marketplace.as_deref(), Some("official"));
         assert_eq!(v.version.as_deref(), Some("0.50.0"));
