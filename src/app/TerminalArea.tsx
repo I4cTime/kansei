@@ -11,7 +11,7 @@ export function TerminalArea() {
   const restored = useAtomValue(tabsRestoredAtom);
 
   return (
-    <div className="relative min-h-0 flex-1 bg-bg">
+    <div data-terminal-area className="relative min-h-0 flex-1 bg-bg">
       {tabs.map((t) => (
         <TerminalView key={t.key} tab={t} active={t.key === activeKey} />
       ))}

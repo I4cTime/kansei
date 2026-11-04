@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAtomValue } from "jotai";
-import { FileText, FolderPlus, X } from "lucide-react";
+import { FileText, FolderPlus, Palette as PaletteIcon, Upload, X } from "lucide-react";
 import { claudeCommandAtom, prefsAtom, savePrefs, type Prefs } from "../../app/prefs";
 import { refreshProject } from "../../app/project";
-import type { ProjectInfo } from "../../lib/ipc";
+import { theme as themeIpc, type ProjectInfo } from "../../lib/ipc";
+import { activeThemeAtom, omarchyAtom } from "../../app/theme/apply";
+import { BASE_COLORS, prettyName } from "../../app/theme/palette";
+import { PRESETS, findPreset, type Preset } from "../../app/theme/presets";
+import { themeTickAtom } from "../../app/terminalTheme";
 import { Badge, Button, Field, IconButton, Select, TextInput, Toggle, cx } from "../ui";
 import { useOpenEditor } from "../shared/EditorSheet";
 import { getPaths, readJsonObject, useLoad, usePaths, useToast, writeJson } from "../shared/hooks";
@@ -314,18 +318,128 @@ function AppSettings() {
           />
         </Field>
       </div>
+      <Appearance prefs={prefs} save={save} />
+      <Note>Saved to ~/.local/share/kansei/prefs.json. Terminals pick up font and theme changes live.</Note>
+      <div className="h-3" />
+    </div>
+  );
+}
+
+function Appearance({ prefs, save }: { prefs: Prefs; save: (patch: Partial<Prefs>) => void }) {
+  const omarchy = useAtomValue(omarchyAtom);
+  const preset = prefs.theme.startsWith("preset:") ? findPreset(prefs.theme.slice("preset:".length)) : undefined;
+  const paletteSource = prefs.theme === "omarchy" || !!preset;
+  const omarchyLabel = omarchy ? `Follow Omarchy (${prettyName(omarchy.name)})` : omarchy === null ? "Follow Omarchy (Omarchy theme not found)" : "Follow Omarchy";
+  return (
+    <>
       <SectionHeader title="Appearance" />
-      <div className="flex flex-col gap-2.5 px-3 py-1">
+      <div className="flex flex-col gap-2.5 px-3 py-1" data-appearance>
         <Field label="Theme">
-          <Select value={prefs.theme} onChange={(e) => save({ theme: e.target.value as Prefs["theme"] })}>
+          <Select value={prefs.theme} onChange={(e) => save({ theme: e.target.value as Prefs["theme"] })} data-theme-select>
             <option value="system">Match system</option>
             <option value="dark">Dark</option>
             <option value="light">Light</option>
+            <option value="omarchy">{omarchyLabel}</option>
+            <optgroup label="Presets">
+              {PRESETS.map((p) => (
+                <option key={p.id} value={`preset:${p.id}`}>
+                  {p.name}
+                </option>
+              ))}
+            </optgroup>
           </Select>
         </Field>
+        <Swatches />
+        {preset && <PresetControls preset={preset} effects={prefs.effects} save={save} />}
+        {paletteSource && (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <span className="flex-1 text-[11px] font-medium uppercase tracking-wide text-fg-muted">Theme Claude Code too</span>
+              <Toggle label="Theme Claude Code too" checked={prefs.claudeTheme} onChange={(v) => save({ claudeTheme: v })} />
+            </div>
+            <span className="text-[11px] text-fg-muted">Writes ~/.claude/themes/kansei.json and sets theme to custom:kansei in ~/.claude/settings.json. The previous theme comes back with a built-in source.</span>
+          </div>
+        )}
       </div>
-      <Note>Saved to ~/.local/share/kansei/prefs.json. Terminals pick up font and theme changes live.</Note>
-      <div className="h-3" />
+    </>
+  );
+}
+
+/** 10 px squares: background, raised, accent, foreground, then the eight base colours. */
+function Swatches() {
+  const active = useAtomValue(activeThemeAtom);
+  // The tick re-reads the built-in tokens when the theme or the OS scheme changes.
+  const tick = useAtomValue(themeTickAtom);
+  const colors = useMemo((): [string, string][] => {
+    const p = active.palette;
+    if (p) {
+      return [
+        ["background", p.background],
+        ["raised", p.lighter_background],
+        ["accent", p.accent],
+        ["foreground", p.foreground],
+        ...BASE_COLORS.map((k): [string, string] => [k, p[k]]),
+      ];
+    }
+    // Built-in sources: read the CSS tokens in effect.
+    const s = getComputedStyle(document.documentElement);
+    const v = (n: string) => s.getPropertyValue(n).trim();
+    return [
+      ["background", v("--bg")],
+      ["raised", v("--bg-raised")],
+      ["accent", v("--accent")],
+      ["foreground", v("--fg")],
+      ...(["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"] as const).map((k): [string, string] => [k, v(`--t-${k}`)]),
+    ];
+  }, [active, tick]);
+  return (
+    <div className="flex flex-wrap items-center gap-1" data-theme-swatches title={active.name}>
+      {colors.map(([name, color], i) => (
+        <span
+          key={name}
+          title={`${name} ${color}`}
+          className={cx("h-[10px] w-[10px] shrink-0 border border-border", i === 4 && "ml-1.5")}
+          style={{ background: color }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function PresetControls({ preset, effects, save }: { preset: Preset; effects: boolean; save: (patch: Partial<Prefs>) => void }) {
+  const toast = useToast();
+  const home = usePaths()?.home;
+  const [busy, setBusy] = useState(false);
+  const hasEffects = !!(preset.effects && Object.values(preset.effects).some(Boolean));
+  const slug = `kansei-${preset.id}`;
+  const exportTheme = async (apply: boolean) => {
+    setBusy(true);
+    try {
+      const dir = tildify(await themeIpc.exportOmarchy({ slug, name: preset.name, palette: preset.palette, apply }), home);
+      toast.info(apply ? `Exported to ${dir} and applied` : `Exported to ${dir}. Apply with: omarchy theme set ${slug}`);
+    } catch (e) {
+      toast.error(e, "Export failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-2.5" data-preset-controls>
+      <span className="text-[11px] text-fg-muted italic">{preset.tagline}</span>
+      <div className="flex items-center gap-2">
+        <span className="flex-1 text-[11px] font-medium uppercase tracking-wide text-fg-muted" title={hasEffects ? undefined : "This preset has no effects"}>
+          Visual effects
+        </span>
+        <Toggle label="Visual effects" checked={effects} disabled={!hasEffects} onChange={(v) => save({ effects: v })} />
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        <Button icon={Upload} disabled={busy} onClick={() => void exportTheme(false)} title={`Writes ~/.config/omarchy/themes/${slug}`}>
+          Export as Omarchy theme
+        </Button>
+        <Button icon={PaletteIcon} disabled={busy} onClick={() => void exportTheme(true)} title={`Exports, then runs omarchy theme set ${slug}`}>
+          Export and apply
+        </Button>
+      </div>
     </div>
   );
 }

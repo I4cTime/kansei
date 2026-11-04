@@ -6,7 +6,15 @@
 //                                          when it is executable, else claude from PATH (see claudeCommand)
 //   fontSize:         number               terminal font size in px (8..32)
 //   fontFamily:       string               terminal font family (CSS font-family list)
-//   theme:            "system" | "dark" | "light"   sets data-theme on <html>
+//   theme:            "system" | "dark" | "light" | "omarchy" | "preset:<id>"
+//                                          built-ins set data-theme on <html>; "omarchy" follows the
+//                                          live Omarchy theme, "preset:<id>" a bundled preset (an
+//                                          unknown id falls back to "system"); see src/app/theme/apply.ts
+//   effects:          boolean              apply a preset's visual effects (glow, scanlines, square)
+//   claudeTheme:      boolean              keep Claude Code on the same palette (~/.claude/themes/kansei.json
+//                                          and theme "custom:kansei" in ~/.claude/settings.json)
+//   claudeThemeRestore: string | null      settings.json `theme` before Kansei set custom:kansei, restored
+//                                          when the user returns to a built-in source
 //   sidebarWidth:     number               expanded sidebar width in px (220..520)
 //   sidebarCollapsed: boolean              true = 44 px icon rail
 //   sidebarSection:   string | null        id of the active sidebar panel
@@ -25,9 +33,11 @@
 import { atom } from "jotai";
 import { files, projects } from "../lib/ipc";
 import { debounce, getPaths, joinPath, store, toastError } from "./store";
+import { findPreset } from "./theme/presets";
 
 export type NewTabCommand = "claude" | "shell";
-export type ThemePref = "system" | "dark" | "light";
+export type BuiltinTheme = "system" | "dark" | "light";
+export type ThemePref = BuiltinTheme | "omarchy" | `preset:${string}`;
 
 export type Prefs = {
   newTabCommand: NewTabCommand;
@@ -35,6 +45,9 @@ export type Prefs = {
   fontSize: number;
   fontFamily: string;
   theme: ThemePref;
+  effects: boolean;
+  claudeTheme: boolean;
+  claudeThemeRestore: string | null;
   sidebarWidth: number;
   sidebarCollapsed: boolean;
   sidebarSection: string | null;
@@ -56,6 +69,9 @@ export const DEFAULT_PREFS: Prefs = {
   fontSize: 13,
   fontFamily: "JetBrainsMono Nerd Font, monospace",
   theme: "system",
+  effects: true,
+  claudeTheme: true,
+  claudeThemeRestore: null,
   sidebarWidth: SIDEBAR_DEFAULT,
   sidebarCollapsed: false,
   sidebarSection: null,
@@ -94,6 +110,13 @@ function folderList(v: unknown, fallback: string[]): string[] {
   return out;
 }
 
+/** A known theme source; "preset:<id>" only when <id> is a bundled preset. */
+function sanitizeTheme(v: unknown, fallback: ThemePref): ThemePref {
+  if (v === "system" || v === "dark" || v === "light" || v === "omarchy") return v;
+  if (typeof v === "string" && v.startsWith("preset:") && findPreset(v.slice(7))) return v as ThemePref;
+  return fallback;
+}
+
 /** Coerce unknown JSON into a valid Prefs, falling back to defaults per field. */
 export function sanitizePrefs(raw: unknown): Prefs {
   const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -106,7 +129,10 @@ export function sanitizePrefs(raw: unknown): Prefs {
         ? Math.min(32, Math.max(8, r.fontSize))
         : d.fontSize,
     fontFamily: typeof r.fontFamily === "string" && r.fontFamily.trim() ? r.fontFamily : d.fontFamily,
-    theme: r.theme === "dark" || r.theme === "light" || r.theme === "system" ? r.theme : d.theme,
+    theme: sanitizeTheme(r.theme, d.theme),
+    effects: typeof r.effects === "boolean" ? r.effects : d.effects,
+    claudeTheme: typeof r.claudeTheme === "boolean" ? r.claudeTheme : d.claudeTheme,
+    claudeThemeRestore: typeof r.claudeThemeRestore === "string" ? r.claudeThemeRestore : d.claudeThemeRestore,
     sidebarWidth: typeof r.sidebarWidth === "number" ? clampSidebar(r.sidebarWidth) : d.sidebarWidth,
     sidebarCollapsed: typeof r.sidebarCollapsed === "boolean" ? r.sidebarCollapsed : d.sidebarCollapsed,
     sidebarSection: typeof r.sidebarSection === "string" ? r.sidebarSection : d.sidebarSection,

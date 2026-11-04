@@ -200,7 +200,9 @@ The files allowlist needed no change: `~/.claude/**` was already readable.
 
 Dark by default, light via `prefers-color-scheme` or the `theme` pref
 (`data-theme="light|dark"` on `<html>`). Tokens live in `src/index.css`; the
-terminal theme is derived from them in `src/app/terminalTheme.ts`. No em dashes
+terminal theme is derived from them in `src/app/terminalTheme.ts`. Palette
+themes (follow Omarchy, bundled presets) override the same tokens inline, see
+"Themes". No em dashes
 anywhere in copy. Font: system UI for chrome, `JetBrainsMono Nerd Font, monospace`
 for the terminal (Omarchy ships it).
 
@@ -783,3 +785,213 @@ No em dashes anywhere in the file. Dates are `YYYY-MM-DD` plus the weekday name.
   checks.
 - Front-end tests run with vitest (`pnpm test`): `src/panels/calendar/model.test.ts`,
   `src/panels/board/model.test.ts`, `src/app/shortcuts.test.ts`.
+
+## Themes (added 2026-11-03)
+
+A theme is a palette in the shape of an Omarchy `colors.toml`. It can come from
+three sources: the built-in CSS (system, dark, light), the live Omarchy theme, or
+a bundled preset. Palette themes set the tokens of `src/index.css` inline on
+`<html>`, so the chrome and every open terminal retint live through
+`themeTickAtom`; the built-in sources clear those inline values and behave as
+before.
+
+### Palette
+
+```ts
+// src/app/theme/palette.ts
+export type Mode = "dark" | "light";
+export type Palette = {
+  mode: Mode;
+  accent: string; selection: string; muted: string;
+  background: string; dark_background: string; darker_background: string; lighter_background: string;
+  foreground: string; dark_foreground: string; light_foreground: string; bright_foreground: string;
+  red: string; yellow: string; orange: string; green: string; cyan: string; blue: string; magenta: string; brown: string;
+  bright_red: string; bright_yellow: string; bright_green: string; bright_cyan: string; bright_blue: string; bright_magenta: string;
+};
+```
+
+Every colour is `#rrggbb`. `parsePalette(raw: Record<string, string>): Palette | null`
+accepts an Omarchy palette with the optional keys (`orange`, `brown`, the four
+`bright_*`, `dark_background`, `darker_background`, `lighter_background`,
+`dark_foreground`, `light_foreground`, `bright_foreground`, `selection`, `muted`)
+missing and derives them: brights from the base colour mixed 25% towards the
+foreground, backgrounds mixed 6%/12% towards black or 8% towards the foreground,
+foregrounds mixed towards the background, `selection` = `mix(background, accent, 25%)`,
+`muted` = `mix(background, foreground, 30%)`, `orange` = `mix(red, yellow, 50%)`,
+`brown` = `mix(orange, background, 45%)`. `mode` defaults to `"dark"`. A palette
+without `accent`, `background`, `foreground` or any of the six base colours is
+rejected (null).
+
+`paletteToTokens(p: Palette): Record<string, string>` maps the palette onto the
+CSS tokens exactly as Omarchy's own Alacritty template does, so a terminal in
+Kansei matches the user's Alacritty for the same theme:
+
+| Token | Source |
+| --- | --- |
+| `--bg` | `background` |
+| `--bg-raised` | `lighter_background` |
+| `--bg-sunken` | `dark_background` |
+| `--bg-hover` | `mix(lighter_background, foreground, 8%)` |
+| `--fg` | `foreground` |
+| `--fg-muted` | `dark_foreground` |
+| `--border` | `muted` |
+| `--accent` | `accent` |
+| `--accent-fg` | `darker_background` |
+| `--danger` / `--ok` / `--warn` | `red` / `green` / `yellow` |
+| `--t-black` | `background` |
+| `--t-red` .. `--t-magenta` | the base colours |
+| `--t-cyan` | `cyan` |
+| `--t-white` | `foreground` |
+| `--t-bblack` | `muted` |
+| `--t-bred` .. `--t-bmagenta` | the `bright_*` colours |
+| `--t-bwhite` | `bright_foreground` |
+| `--t-cursor` | `bright_foreground` |
+| `--t-selection` | `selection` |
+
+`mix(a, b, pct)` mixes two `#rrggbb` colours in sRGB (pct of `b`), rounded to
+integers, and is the single helper every derivation uses.
+
+### Prefs
+
+`theme` stays a string: `"system" | "dark" | "light" | "omarchy" | "preset:<id>"`.
+`sanitizePrefs` keeps `preset:<id>` only when `<id>` is a bundled preset,
+otherwise falls back to `"system"`. New keys:
+
+- `effects: boolean` (default `true`): apply a preset's effects (below).
+- `claudeTheme: boolean` (default `true`): keep Claude Code in the tabs on the
+  same palette (see "Claude Code theme").
+- `claudeThemeRestore: string | null` (default `null`): the `theme` value
+  `~/.claude/settings.json` had before Kansei set `custom:kansei`, restored when
+  the user returns to a built-in source.
+
+### Sources
+
+- **system / dark / light**: unchanged behaviour; the inline tokens and effect
+  attributes are removed from `<html>`.
+- **omarchy**: the Rust command `theme_omarchy` returns the live theme or null:
+
+  ```ts
+  type OmarchyTheme = { name: string; palette: Record<string, string> }; // raw colors.toml strings
+  theme.omarchy(): Promise<OmarchyTheme | null>
+  theme.onOmarchy(cb: (t: OmarchyTheme | null) => void): Promise<UnlistenFn>   // event "theme:omarchy"
+  ```
+
+  `~/.local/state/omarchy/current/theme.name` is the name, `current/theme/colors.toml`
+  the palette. `src-tauri/src/theme.rs` parses the flat TOML by hand (`key = "value"`
+  lines, `#` comments, quoted strings only; other value types ignored) and a
+  background thread stats both files every 2 s, emitting `theme:omarchy` whenever
+  either mtime changes or the files appear or vanish. `omarchy theme set` swaps the
+  directory atomically (`mv next-theme theme`), so a read never sees a half file.
+  When Omarchy is not installed or the files are missing, the front end falls back
+  to the built-in dark tokens and shows one toast ("Omarchy theme not found").
+  No `theme-set` hook is installed; polling two stats is enough.
+
+- **preset:<id>**: `src/app/theme/presets.ts` exports `PRESETS: Preset[]`:
+
+  ```ts
+  type Effects = { glow?: boolean; scanlines?: boolean; square?: boolean };
+  type Preset = { id: string; name: string; tagline: string; palette: Palette; effects?: Effects };
+  ```
+
+  Seven ship: `night-city` (cyberpunk: hot pink accent, cyan and acid green on
+  near-black violet; glow + scanlines), `grid` (Tron: cyan on black, square
+  corners; glow + square), `phosphor` (Matrix green monochrome; scanlines),
+  `replicant` (Blade Runner amber CRT; glow + scanlines), `mother` (Alien,
+  Nostromo green-blue monochrome; square), `nerv` (Evangelion: orange accent,
+  purple grounds, acid green ok; glow), `outrun` (synthwave: magenta accent,
+  violet grounds, cyan; glow). All seven palettes are complete (no derivation)
+  and the test `presets.test.ts` asserts, for every preset: all keys present and
+  valid hex, WCAG contrast `foreground` on `background` of at least 7, `accent`
+  on `background` at least 3, `dark_foreground` on `background` at least 3, and
+  unique ids. Exact values live in the module; the contract fixes the names and
+  moods.
+
+### Effects
+
+Static CSS only, no animation, nothing that touches the terminal canvas's
+compositing (this machine's WebKitGTK + NVIDIA history). `src/app/theme/apply.ts`
+sets `data-fx-glow`, `data-fx-scanlines`, `data-fx-square` on `<html>` when the
+active preset asks for them and `prefs.effects` is on; `src/index.css` implements
+them:
+
+- glow: a soft `box-shadow` in the accent colour on the active tab indicator and
+  the focused input ring, plus a `text-shadow` on the sidebar brand label.
+- scanlines: a `pointer-events: none` `::after` overlay on the terminal area
+  with a 3 px `repeating-linear-gradient`, 4% opacity, never on the sidebar.
+- square: `--radius: 0`.
+
+### Claude Code theme
+
+Claude Code's TUI takes its accents from its own theme file, not from the
+terminal palette, so a Kansei palette theme would otherwise leave the TUI on
+Claude's default colours. When `prefs.claudeTheme` is on and the source is
+omarchy or a preset, `apply.ts` renders `claudeThemeFromPalette(p)` (the same
+keys and mixes as Omarchy's `claude.json.tpl`: `claude` = accent, `text` =
+foreground, `inverseText` = background, `inactive` = `mix(foreground, background, 40%)`,
+`subtle` = muted, `suggestion`/`planMode` = cyan, `permission` = blue,
+`remember`/`warning`/`autoAccept` = yellow, `success` = green, `error` = red,
+`merged` = magenta, `promptBorder` = accent, `bashBorder` = bright_yellow, `ide`
+= bright_cyan, the `diff*` mixes 15/8/32% of green or red into the background,
+the message backgrounds 6/10% of foreground into the background, `selectionBg` =
+selection, `rate_limit_fill` = accent, `rate_limit_empty` = `mix(background, foreground, 20%)`,
+`briefLabelYou` = yellow, `briefLabelClaude` = accent, the `*Shimmer` keys 35%
+mixes with the foreground, `base` = mode) to `~/.claude/themes/kansei.json`
+through `files.writeText`, and sets `theme: "custom:kansei"` in
+`~/.claude/settings.json` (read, merge, write; other keys untouched). The
+previous `theme` value is kept in `prefs.claudeThemeRestore` unless it already
+was `custom:kansei`. Switching to a built-in source restores it when
+settings.json still says `custom:kansei`, then clears the pref. Claude Code
+watches `~/.claude/themes` and hot-reloads. The write happens at most once per
+distinct rendered JSON (compare before writing).
+
+### Export to Omarchy
+
+A preset can become a desktop theme. Rust command:
+
+```ts
+theme.exportOmarchy(a: { slug: string; name: string; palette: Palette; apply: boolean }): Promise<string>  // the theme dir
+```
+
+Writes `~/.config/omarchy/themes/<slug>/colors.toml` (a `# <name>, exported from
+Kansei <date>` comment, `mode`, then every palette key as `key = "#rrggbb"`, plus
+`hyprland_active_border = "rgba(<accent>ee) rgba(<cyan>ee) 45deg"` and
+`hyprland_inactive_border = "rgba(<muted>aa)"`), creates `backgrounds/` and, when
+it is empty, copies the file `~/.local/state/omarchy/current/background` points
+to into it, so the theme is complete. The slug is `kansei-<preset id>` and is
+validated (`[a-z0-9-]+`). With `apply`, runs `omarchy theme set <slug>`
+detached after writing. Returns the directory. Overwrites an earlier export of
+the same slug (the user's own themes under `~/.config/omarchy/themes` are
+unrestricted).
+
+### Settings panel
+
+The Appearance section becomes:
+
+- Theme select: Match system, Dark, Light, Follow Omarchy (with the live theme
+  name when known, "Omarchy theme not found" otherwise), then an "Presets"
+  optgroup with the seven names.
+- Under the select, a swatch strip for the active palette (background, raised,
+  accent, foreground, then the eight base colours as 10 px squares) so the
+  choice can be read without looking away from the panel.
+- When a preset is active: its tagline, a "Visual effects" checkbox
+  (`prefs.effects`), and two buttons "Export as Omarchy theme" and "Export and
+  apply" that call `theme.exportOmarchy`, toasting the directory and, for a plain
+  export, the `omarchy theme set kansei-<id>` command.
+- "Theme Claude Code too" checkbox (`prefs.claudeTheme`), shown for omarchy and
+  presets, with the hint that it writes `~/.claude/themes/kansei.json` and the
+  `theme` setting.
+
+### Module ownership
+
+- `src-tauri/src/theme.rs`: `theme_omarchy`, `theme_export_omarchy`, the watcher
+  (`theme::start(app)` from the setup hook), the flat TOML parser (`parse_flat_toml`)
+  and `render_colors_toml`, all unit-tested on temp dirs.
+- `src/app/theme/palette.ts`: types, `mix`, `parsePalette`, `paletteToTokens`,
+  `claudeThemeFromPalette`, `contrast`. Pure, tested in `palette.test.ts`.
+- `src/app/theme/presets.ts`: the seven presets, tested in `presets.test.ts`.
+- `src/app/theme/apply.ts`: `startTheme()` called from `boot()` in `App.tsx`
+  (replaces the `data-theme` effect there): subscribes to `prefsAtom` and the
+  Omarchy event, applies tokens and effects, bumps `themeTickAtom`, syncs the
+  Claude theme. `activeThemeAtom: { source, name, palette: Palette | null, effects: Effects }`
+  for the Settings swatches. Dev driver: `t.theme.{activeThemeAtom, applyNow}`.
+- `src/lib/ipc.ts`: `theme` namespace as above.

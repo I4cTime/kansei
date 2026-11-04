@@ -5,6 +5,7 @@ mod memory;
 mod projects;
 mod pty;
 mod sessions;
+mod theme;
 mod watchdog;
 mod workspace;
 
@@ -23,6 +24,7 @@ pub fn run() {
         .setup(|app| {
             driver::start(app.handle());
             watchdog::start(app.handle());
+            theme::start(app.handle());
             board::startup_render();
             Ok(())
         })
@@ -64,6 +66,8 @@ pub fn run() {
             board::schedule_write,
             board::schedule_render,
             board::activity_days,
+            theme::theme_omarchy,
+            theme::theme_export_omarchy,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

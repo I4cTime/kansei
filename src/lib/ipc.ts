@@ -244,6 +244,20 @@ export const schedule = {
   activity: (from: string, to: string) => invoke<ActivityDay[]>("activity_days", { from, to }),
 };
 
+/** Raw `colors.toml` strings of the live Omarchy theme. */
+export type OmarchyTheme = { name: string; palette: Record<string, string> };
+
+export const theme = {
+  /** The live Omarchy theme, null when Omarchy or its files are missing. */
+  omarchy: () => invoke<OmarchyTheme | null>("theme_omarchy"),
+  /** Fires when theme.name or colors.toml changes, appears or vanishes (polled every 2 s). */
+  onOmarchy: (cb: (t: OmarchyTheme | null) => void): Promise<UnlistenFn> =>
+    listen<OmarchyTheme | null>("theme:omarchy", (ev) => cb(ev.payload)),
+  /** Writes ~/.config/omarchy/themes/<slug>/; with apply runs `omarchy theme set <slug>` detached. Returns the theme dir. */
+  exportOmarchy: (a: { slug: string; name: string; palette: Record<string, string>; apply: boolean }) =>
+    invoke<string>("theme_export_omarchy", a),
+};
+
 /** Decode a base64 pty chunk to bytes for term.write(). */
 export function b64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);

@@ -71,7 +71,7 @@ export function Sidebar() {
       <div
         className={`flex h-[34px] shrink-0 items-center border-b border-border ${collapsed ? "justify-center" : "justify-between pl-3 pr-1"}`}
       >
-        {!collapsed && <span className="text-xs font-semibold tracking-wide text-fg-muted">kansei</span>}
+        {!collapsed && <span data-brand className="text-xs font-semibold tracking-wide text-fg-muted">kansei</span>}
         <IconButton
           icon={collapsed ? PanelLeftOpen : PanelLeftClose}
           label={collapsed ? "Expand sidebar (Ctrl+Shift+B)" : "Collapse sidebar (Ctrl+Shift+B)"}

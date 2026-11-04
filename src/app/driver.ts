@@ -12,6 +12,7 @@ import { store } from "./store";
 import { claudeCommandAtom, prefsAtom, refreshClaudeCommand, savePrefs, setPrefs, spawnCommand } from "./prefs";
 import { overlayAtom, toastsAtom } from "../lib/overlay";
 import { dismissOverlay } from "./keyboard";
+import { activeThemeAtom, applyNow, omarchyAtom } from "./theme/apply";
 import * as projectActions from "../panels/projects/actions";
 import { sessionsProjectFilterAtom } from "../panels/sessions/model";
 import * as workspaces from "../panels/projects/workspaceStore";
@@ -49,6 +50,8 @@ export function installDriver() {
     /** Calendar atoms and helpers (scheduleAtom, todayAtom, weekGrid, monthGrid, dayPlan...) and loadSchedule / saveSchedule. */
     calendar: { ...calendarModel, ...calendarActions },
     project: { projectAtom, refreshProject },
+    /** Theme: what is applied (source, name, palette, effects), the live Omarchy theme, and a forced re-apply. */
+    theme: { activeThemeAtom, applyNow, omarchyAtom },
     /** Projects panel pin / hide helpers (addProjectWithPicker opens a native dialog). */
     projects: projectActions,
     sessionsProjectFilterAtom,

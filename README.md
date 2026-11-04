@@ -124,6 +124,32 @@ knows the plan. The sidebar's Today strip (`Today · <area> · <n> tasks`) opens
 the Calendar, and the Projects panel marks the project of today's area with a
 `today` chip and lists it first in its group.
 
+## Themes
+
+Settings, Appearance. A theme is a palette in the shape of an Omarchy
+`colors.toml`, and it can come from three places:
+
+- **Match system, Dark, Light**: the built-in tokens in `src/index.css`.
+- **Follow Omarchy**: the live desktop theme, read from
+  `~/.local/state/omarchy/current` and re-applied the moment `omarchy theme set`
+  swaps it. Chrome and every open terminal retint together, with the same
+  colour mapping Omarchy uses for Alacritty.
+- **Presets**: seven bundled sci-fi palettes - Night City (cyberpunk), Grid
+  (Tron), Phosphor (Matrix), Replicant (Blade Runner amber CRT), Mother (Alien),
+  NERV (Evangelion) and Outrun (synthwave). Some carry static visual effects
+  (accent glow, a faint scanline overlay on the terminal, square corners) that
+  the Visual effects switch turns off.
+
+Claude Code in the tabs takes its colours from its own theme file, so with
+"Theme Claude Code too" on (the default) Kansei renders
+`~/.claude/themes/kansei.json` from the same palette and sets
+`theme: "custom:kansei"` in `~/.claude/settings.json`; going back to a built-in
+theme restores the previous value. A preset can also become a desktop theme:
+"Export as Omarchy theme" writes `~/.config/omarchy/themes/kansei-<id>/` (with
+the current wallpaper as its background) and "Export and apply" runs
+`omarchy theme set` on it, so the whole desktop follows Kansei instead of the
+other way round. Spec: `CONTRACT.md`, "Themes".
+
 ## Packaging
 
 An Arch Linux package builds from the committed state of this checkout (not

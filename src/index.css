@@ -73,3 +73,30 @@ body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); fon
 * { box-sizing: border-box; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* Theme effects (src/app/theme/apply.ts sets data-fx-* on <html> for presets that
+   ask for them while prefs.effects is on). Static only: no animation, no filters,
+   nothing on the xterm canvas itself. */
+:root[data-fx-glow] [data-tab-indicator] {
+  box-shadow: 0 0 6px 1px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+:root[data-fx-glow] input:focus,
+:root[data-fx-glow] select:focus,
+:root[data-fx-glow] textarea:focus {
+  box-shadow: 0 0 0 1px var(--accent), 0 0 8px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+:root[data-fx-glow] [data-brand] {
+  text-shadow: 0 0 6px color-mix(in srgb, var(--accent) 75%, transparent);
+}
+:root[data-fx-scanlines] [data-terminal-area]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 9; /* over xterm's own layers, under the exit banner (z-10) */
+  pointer-events: none;
+  opacity: 0.04;
+  background: repeating-linear-gradient(to bottom, var(--fg) 0, var(--fg) 1px, transparent 1px, transparent 3px);
+}
+:root[data-fx-square] {
+  --radius: 0;
+}

@@ -78,7 +78,7 @@ function TabItem({ tab, active }: { tab: Tab; active: boolean }) {
         active ? "bg-bg text-fg" : "bg-bg-sunken text-fg-muted hover:bg-bg-hover hover:text-fg"
       }`}
     >
-      {active && <span className="absolute inset-x-0 top-0 h-[2px] bg-accent" />}
+      {active && <span data-tab-indicator className="absolute inset-x-0 top-0 h-[2px] bg-accent" />}
       {dead && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-danger" title="Exited" />}
       {tab.status === "spawning" && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warn" title="Starting" />}
       {editing ? (

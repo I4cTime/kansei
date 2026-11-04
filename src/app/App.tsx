@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { useAtomValue } from "jotai";
 import { OverlayHost } from "./OverlayHost";
 import { Sidebar } from "./Sidebar";
 import { TabRail } from "./TabRail";
@@ -7,11 +6,11 @@ import { TerminalArea } from "./TerminalArea";
 import { ToastHost } from "./ToastHost";
 import { installShortcuts } from "./keyboard";
 import { installDriver } from "./driver";
-import { loadPrefs, prefsAtom } from "./prefs";
-import { store, toastError } from "./store";
+import { loadPrefs } from "./prefs";
+import { toastError } from "./store";
 import { restoreTabs } from "./tabs";
 import { startPtyRouting } from "./terminals";
-import { themeTickAtom } from "./terminalTheme";
+import { startTheme } from "./theme/apply";
 import { startWorkspaces } from "../panels/projects/workspaceStore";
 import { startBoard } from "../panels/board/actions";
 import { startCalendar } from "../panels/calendar/actions";
@@ -26,36 +25,20 @@ async function boot() {
     toastError(e, "Could not listen for terminal output");
   }
   await loadPrefs();
+  startTheme();
   startWorkspaces();
   startBoard();
   startCalendar();
   await restoreTabs();
 }
 
-const bumpTheme = () => store.set(themeTickAtom, (n) => n + 1);
-
 export default function App() {
-  const theme = useAtomValue(prefsAtom).theme;
-
   useEffect(() => {
     void boot();
   }, []);
 
   useEffect(() => installShortcuts(), []);
   useEffect(() => installDriver(), []);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    if (theme === "system") root.removeAttribute("data-theme");
-    else root.setAttribute("data-theme", theme);
-    bumpTheme();
-  }, [theme]);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: light)");
-    mq.addEventListener("change", bumpTheme);
-    return () => mq.removeEventListener("change", bumpTheme);
-  }, []);
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-bg text-fg">
