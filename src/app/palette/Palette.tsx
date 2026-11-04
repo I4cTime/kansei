@@ -156,15 +156,15 @@ function Row({ c, index, selected, onRun }: { c: Command; index: number; selecte
         selected ? "bg-accent/15 text-fg shadow-[inset_2px_0_0_var(--color-accent)]" : !c.disabled && "hover:bg-bg-hover",
       )}
     >
-      <span data-palette-title className="min-w-0 shrink truncate text-fg">
+      <span data-palette-title className="min-w-0 truncate text-fg">
         {c.title}
       </span>
       {(c.disabled || c.hint) && (
-        <span data-palette-hint className={cx("min-w-0 flex-1 truncate text-[11px]", c.disabled ? "text-warn" : "text-fg-muted")}>
+        <span data-palette-hint className={cx("max-w-[45%] shrink-0 truncate text-[11px]", c.disabled ? "text-warn" : "text-fg-muted")}>
           {c.disabled ?? c.hint}
         </span>
       )}
-      {!c.disabled && !c.hint && <span className="flex-1" />}
+      <span className="flex-1" />
       <span data-palette-group className={cx("shrink-0 text-[11px]", selected ? "text-accent" : "text-fg-muted")}>
         {c.group}
       </span>
