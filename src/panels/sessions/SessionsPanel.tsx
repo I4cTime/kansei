@@ -3,6 +3,7 @@ import { useAtom, useAtomValue } from "jotai";
 import { Play, Trash } from "lucide-react";
 import { files, pty, sessions, type Session } from "../../lib/ipc";
 import { CLAUDE, activateTab, openTab, tabsAtom } from "../../app/tabs";
+import { activityAtom } from "../../app/activity";
 import { Badge, Button, IconButton, Select } from "../ui";
 import { getPaths, useToast } from "../shared/hooks";
 import { ConfirmBar, EmptyState, Panel, SearchInput, SectionHeader } from "../shared/list";
@@ -234,6 +235,9 @@ function SessionRow({
   const resumeTip = s.live ? "Already running" + (tab ? `, open in tab ${tab.title}` : "") : `claude --resume ${s.id}`;
   const deleteTip = s.live ? "Cannot delete while the session is running" : s.transcriptPath ? `Delete ${s.transcriptPath}` : "No transcript on disk";
   const liveTip = s.live ? [`pid ${s.live.pid}`, s.live.status, s.live.name].filter(Boolean).join(", ") : undefined;
+  // A session open in a tab shows the tab's status (with waiting); others the session file's.
+  const tabStatus = Object.values(useAtomValue(activityAtom)).find((a) => a.sessionId === s.id)?.status;
+  const liveStatus = tabStatus ?? s.live?.status ?? null;
   return (
     <div className="group px-3 py-1.5 hover:bg-bg-hover">
       <div className="flex min-w-0 items-start gap-1.5">
@@ -241,8 +245,8 @@ function SessionRow({
           {s.title}
         </span>
         {s.live && (
-          <Badge tone="ok" title={liveTip}>
-            LIVE
+          <Badge tone={liveStatus === "waiting" ? "warn" : "ok"} title={liveTip}>
+            {liveStatus ? `LIVE ${liveStatus}` : "LIVE"}
           </Badge>
         )}
       </div>

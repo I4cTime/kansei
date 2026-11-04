@@ -1113,3 +1113,111 @@ required fields and options above. CHANGELOG under Unreleased.
   Connecting toasts "Connected to <title>", then the `setupWarning` line
   ("The project has no Order field; ordering is disabled. Status lacks the
   option In review.") when something is missing.
+
+## Tab status and context gauge (added 2026-11-04)
+
+Every tab whose pty runs Claude Code shows what that session is doing and how
+full its context window is, and a hidden tab that starts waiting for the user
+raises a desktop notification. Task kansei#7.
+
+### States
+
+```ts
+type TabActivity = {
+  pid: number;                 // the tab's pty child pid (Tab.pid)
+  sessionId: string;
+  status: "busy" | "waiting" | "idle";
+  /** Why it waits, when known: "permission prompt", "input needed", "sandbox request",
+   *  "worker request", "dialog open", or "turn finished" for the idle-after-busy rule. */
+  waitingFor: string | null;
+  statusUpdatedAt: number;     // epoch ms
+  context: { tokens: number; model: string | null } | null;   // null until the first assistant turn
+};
+```
+
+Sources, in order of precedence:
+
+1. `~/.claude/sessions/<pid>.json` (internal format, read already by
+   `sessions.rs`): `status` is `busy` or `idle`, with `statusUpdatedAt`
+   (Claude Code 2.1.305 also writes `waiting` with `waitingFor` there, taken
+   as is). The
+   session pid is a descendant of the tab's pty child (the launcher execs
+   `claude`, which forks workers), so the match walks `/proc/<pid>/stat` parents
+   from the session pid upwards, at most 12 levels, until it reaches a tab pid.
+   Polled every second: one `read_dir` plus one `metadata` per file, parsed only
+   when the mtime changed.
+2. `claude agents --json --all` (the supported interface, see
+   code.claude.com/docs/en/agent-view): `status` adds `waiting` and
+   `waitingFor`. It costs a Node start, so it runs only while at least one
+   matched session is `busy` and then every 4 s, with a 3 s timeout, `claude`
+   from PATH (the `~/.local/bin/claude` launcher only when PATH has none: it
+   fetches credentials on every start, which this call does not need). A `waiting` entry overrides the file's `busy` for that session. Any
+   failure is logged once per minute through `watchdog::note` and ignored.
+3. The idle-after-busy rule, front end: a session that goes from `busy` to
+   `idle` becomes `waiting` with `waitingFor: "turn finished"` until the tab
+   receives keyboard input or becomes the active tab while the window has
+   focus; then it is `idle`. A tab that was never busy in this process is
+   `idle`.
+
+Context: the transcript is `~/.claude/projects/<encoded cwd>/<sessionId>.jsonl`;
+when the encoded dir guess misses, the file is found by name under
+`~/.claude/projects/*/` once and cached per session. On each poll where the
+transcript's size changed, the last 64 KB are read (growing to 256 KB and
+1 MB when they hold no usage line, stopping once the window reaches back past
+the previous size: one attachment or tool-result line can exceed 64 KB) and
+the last non-sidechain, non-`<synthetic>` line with
+`"type":"assistant"` and a `message.usage` gives
+`tokens = input_tokens + cache_creation_input_tokens + cache_read_input_tokens`
+(the statusline's documented `used_percentage` basis; output tokens excluded)
+and `model = message.model`. No usage line in the tail: keep the previous value.
+
+Window size is not recorded anywhere, so the front end uses
+`prefs.contextWindow` (default 200000) and switches to 1000000 for a session
+whose tokens ever exceed 200000 (proof of the extended window); the gauge
+tooltip says which. The gauge is hidden while `context` is null.
+
+### Rust (`src-tauri/src/activity.rs`)
+
+- `activity::start(app)` from the setup hook: the 1 s poll thread above. It
+  emits `tabs:activity` with `TabActivity[]` (camelCase) only when the array
+  changed (status, waitingFor, tokens or membership). The set of tab pids comes
+  from `pty::PtyState` (all live ptys with a pid; no front-end registration).
+- `claude agents --json --all` parsing: `sessionId`, `pid`, `status`,
+  `waitingFor` from each entry; `pid` matched the same way. Pure parse fn,
+  tested on a fixture with interactive and background entries.
+- `notify { title, body }` command: runs `omarchy-notification-send -u normal
+  <title> <body>` when that binary exists, else `notify-send <title> <body>`,
+  argv only, detached and reaped; `Ok(false)` when neither exists.
+- Tests: parent-walk matching on a fake `/proc` layout (a `proc_root` parameter),
+  usage extraction from a transcript tail (last assistant line wins, non-usage
+  lines ignored, truncated first line tolerated), change detection, and the
+  agents JSON parse.
+
+### Front end
+
+- `Tab.pid: number | null` set from `pty_spawn` and `pty_list`.
+- `src/app/activity.ts`: `activityAtom: Record<number /* pid */, TabActivity>`
+  fed by `tabs:activity`, the idle-after-busy rule and the "seen" transitions
+  (input from `terminals.ts`, activation from `activateTab` while
+  `document.hasFocus()`). `tabActivity(tab)` selector. Notification: on a
+  transition into `waiting` for a tab that is not active, or when the window is
+  not focused, call `notify` with the tab title and the reason, when
+  `prefs.notifyWaiting` is on. At most one notification per tab per transition.
+- Tab rail: the status dot replaces the current dead and spawning dots as one
+  element with four looks: busy = accent, filled; waiting = warn with a 1 px
+  ring; idle = fg-muted; dead = danger; spawning = warn hollow. Title attribute
+  carries the state and `waitingFor`. Below the title a 2 px context bar, width =
+  tokens / window, colour ok below 70 %, warn to 90 %, danger above; tooltip
+  "123k of 200k tokens (61 %), <model>". No animation (hidden workspaces get no
+  frames on this machine).
+- Settings, This app, Terminal: "Context window" number input (prefs.contextWindow,
+  50k to 2M) and a "Notify when a hidden tab needs you" switch (prefs.notifyWaiting,
+  default on).
+- Sessions panel: the LIVE badge shows the status word too.
+- Dev driver: `t.activity.{activityAtom, tabActivity}`.
+- `src/lib/ipc.ts`: `activity.onChange(cb)`, `activity.notify(a)`, `TabActivity`.
+
+### Docs
+
+README: a "Tab status" paragraph under Run (or a short new section before
+Themes) and CHANGELOG under Unreleased. Prefs doc comment in prefs.ts.

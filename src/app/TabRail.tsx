@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 import { Plus, X } from "lucide-react";
 import { activateTab, activeKeyAtom, closeTab, newTabWithPicker, renameTab, tabsAtom, type Tab } from "./tabs";
+import { activityAtom, dotFor, gaugeFor, isExtended, tabActivity, type DotLook } from "./activity";
+import { prefsAtom } from "./prefs";
 import { IconButton } from "./ui";
 
 export function TabRail() {
@@ -56,6 +58,10 @@ function TabItem({ tab, active }: { tab: Tab; active: boolean }) {
   };
 
   const dead = tab.status === "dead";
+  const act = tabActivity(tab, useAtomValue(activityAtom));
+  const contextWindow = useAtomValue(prefsAtom).contextWindow;
+  const dot = dotFor(tab, act);
+  const gauge = gaugeFor(act, contextWindow, act ? isExtended(act.sessionId) : false);
 
   return (
     <div
@@ -79,29 +85,35 @@ function TabItem({ tab, active }: { tab: Tab; active: boolean }) {
       }`}
     >
       {active && <span data-tab-indicator className="absolute inset-x-0 top-0 h-[2px] bg-accent" />}
-      {dead && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-danger" title="Exited" />}
-      {tab.status === "spawning" && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warn" title="Starting" />}
-      {editing ? (
-        <input
-          ref={input}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onClick={(e) => e.stopPropagation()}
-          onDoubleClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if (e.key === "Enter") commit();
-            if (e.key === "Escape") {
-              e.preventDefault();
-              setEditing(false);
-            }
-          }}
-          className="h-5 min-w-0 flex-1 rounded-sm border border-accent bg-bg-raised px-1 text-[12.5px] text-fg outline-none"
-        />
-      ) : (
-        <span className={`min-w-0 flex-1 truncate ${dead ? "opacity-70" : ""}`}>{tab.title}</span>
-      )}
+      {dot && <span data-tab-dot={dot.look} className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass(dot.look, active)}`} title={dot.title} />}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {editing ? (
+          <input
+            ref={input}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setEditing(false);
+              }
+            }}
+            className="h-5 w-full min-w-0 rounded-sm border border-accent bg-bg-raised px-1 text-[12.5px] text-fg outline-none"
+          />
+        ) : (
+          <span className={`min-w-0 truncate ${dead ? "opacity-70" : ""}`}>{tab.title}</span>
+        )}
+        {gauge && !editing && (
+          <div data-tab-gauge className="mt-[3px] h-[2px] w-full overflow-hidden rounded-full bg-border" title={gauge.title}>
+            <div className={`h-full ${GAUGE_TONE[gauge.tone]}`} style={{ width: `${(gauge.fraction * 100).toFixed(1)}%` }} />
+          </div>
+        )}
+      </div>
       <button
         type="button"
         aria-label={`Close ${tab.title}`}
@@ -119,4 +131,22 @@ function TabItem({ tab, active }: { tab: Tab; active: boolean }) {
       </button>
     </div>
   );
+}
+
+const GAUGE_TONE = { ok: "bg-ok", warn: "bg-warn", danger: "bg-danger" } as const;
+
+/** Busy = accent, filled; waiting = warn with a 1 px ring; idle = muted; dead = danger; spawning = warn hollow. */
+function dotClass(look: DotLook, active: boolean): string {
+  switch (look) {
+    case "busy":
+      return "bg-accent";
+    case "waiting":
+      return `bg-warn ring-1 ring-warn ring-offset-1 ${active ? "ring-offset-bg" : "ring-offset-bg-sunken"}`;
+    case "idle":
+      return "bg-fg-muted";
+    case "dead":
+      return "bg-danger";
+    case "spawning":
+      return "border border-warn";
+  }
 }

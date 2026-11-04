@@ -4,6 +4,7 @@
 // prefs.claudeCommand change applies to restored tabs too.
 import { open } from "@tauri-apps/plugin-dialog";
 import { files, pty } from "../lib/ipc";
+import { markTabSeen } from "./activity";
 import { CLAUDE, prefsAtom } from "./prefs";
 import { basename, debounce, getPaths, joinPath, store, toastError, uuid } from "./store";
 import { activeKeyAtom, getTab, tabsAtom, tabsRestoredAtom, updateTab, type Tab } from "./tabState";
@@ -46,6 +47,7 @@ function makeTab(spec: TabSpec): Tab {
     status: "spawning",
     exitCode: null,
     error: null,
+    pid: null,
   };
 }
 
@@ -105,7 +107,9 @@ export function renameTab(key: string, title: string) {
 }
 
 export function activateTab(key: string) {
-  if (getTab(key)) store.set(activeKeyAtom, key);
+  if (!getTab(key)) return;
+  store.set(activeKeyAtom, key);
+  if (document.hasFocus()) markTabSeen(key);
 }
 
 /** Move the active tab by delta, wrapping around. */

@@ -291,6 +291,31 @@ export const theme = {
     invoke<string>("theme_export_omarchy", a),
 };
 
+/** What a tab's Claude session is doing (CONTRACT.md "Tab status and context gauge"). */
+export type TabActivity = {
+  /** The tab's pty child pid (Tab.pid). */
+  pid: number;
+  sessionId: string;
+  status: "busy" | "waiting" | "idle";
+  /**
+   * Why it waits, when known: "permission prompt", "input needed", "sandbox request", "worker request",
+   * "dialog open", or "turn finished" for the idle-after-busy rule.
+   */
+  waitingFor: string | null;
+  /** Epoch ms. */
+  statusUpdatedAt: number;
+  /** null until the first assistant turn. tokens = input + cache creation + cache read. */
+  context: { tokens: number; model: string | null } | null;
+};
+
+export const activity = {
+  /** Fires with every matched tab whenever status, waitingFor, tokens or membership changed (polled every second). */
+  onChange: (cb: (list: TabActivity[]) => void): Promise<UnlistenFn> =>
+    listen<TabActivity[]>("tabs:activity", (ev) => cb(ev.payload)),
+  /** Desktop notification (omarchy-notification-send, else notify-send); false when neither exists. */
+  notify: (a: { title: string; body: string }) => invoke<boolean>("notify", a),
+};
+
 /** Decode a base64 pty chunk to bytes for term.write(). */
 export function b64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);

@@ -86,6 +86,16 @@ impl PtyState {
         drop(drained); // Drop -> terminate()
     }
 
+    /// Pids of every pty whose child still runs (the tab pids of CONTRACT.md
+    /// "Tab status and context gauge").
+    pub fn live_pids(&self) -> std::collections::HashSet<u32> {
+        self.lock()
+            .values()
+            .filter(|h| h.alive.load(Ordering::SeqCst))
+            .filter_map(|h| h.pid)
+            .collect()
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, PtyHandle>> {
         self.ptys.lock().unwrap_or_else(|p| p.into_inner())
     }
@@ -160,24 +170,27 @@ const APPIMAGE_VARS: &[&str] = &[
     "OWD",
 ];
 
+/// Claude Code's per-session markers. Dropped from every child Kansei starts
+/// that may run `claude`, so it never thinks it is nested inside another session
+/// (happens when Kansei itself is started from one, e.g. in dev).
+pub const CLAUDE_SESSION_VARS: [&str; 11] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_BRIDGE_SESSION_ID",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_PID",
+    "CLAUDE_EFFORT",
+];
+
 fn sanitize_env(cmd: &mut CommandBuilder) {
-    // A tab running `claude` must not think it is nested inside another Claude
-    // Code session (happens when Kansei itself is started from one, e.g. in dev).
     // Only the session markers are dropped; user-level CLAUDE_CODE_* settings
     // (for example provider switches) stay.
-    for var in [
-        "CLAUDECODE",
-        "CLAUDE_CODE_ENTRYPOINT",
-        "CLAUDE_CODE_CHILD_SESSION",
-        "CLAUDE_CODE_SESSION_ID",
-        "CLAUDE_CODE_SESSION_ATTENDED",
-        "CLAUDE_CODE_MESSAGING_SOCKET",
-        "CLAUDE_CODE_MESSAGING_TOKEN",
-        "CLAUDE_CODE_BRIDGE_SESSION_ID",
-        "CLAUDE_CODE_EXECPATH",
-        "CLAUDE_PID",
-        "CLAUDE_EFFORT",
-    ] {
+    for var in CLAUDE_SESSION_VARS {
         cmd.env_remove(var);
     }
 

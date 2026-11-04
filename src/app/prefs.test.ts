@@ -59,3 +59,18 @@ describe("sanitizePrefs board", () => {
     expect(sanitizePrefs({ board: "acme/7" }).board).toBeNull();
   });
 });
+
+describe("sanitizePrefs tab status keys", () => {
+  it("defaults to a 200k window with notifications on", () => {
+    expect([DEFAULT_PREFS.contextWindow, DEFAULT_PREFS.notifyWaiting]).toEqual([200_000, true]);
+  });
+
+  it("clamps the window to 50k..2M and type-checks notifyWaiting", () => {
+    expect(sanitizePrefs({ contextWindow: 1000 }).contextWindow).toBe(50_000);
+    expect(sanitizePrefs({ contextWindow: 5_000_000 }).contextWindow).toBe(2_000_000);
+    expect(sanitizePrefs({ contextWindow: 500_000.4 }).contextWindow).toBe(500_000);
+    expect(sanitizePrefs({ contextWindow: "1M" }).contextWindow).toBe(200_000);
+    expect(sanitizePrefs({ notifyWaiting: false }).notifyWaiting).toBe(false);
+    expect(sanitizePrefs({ notifyWaiting: "no" }).notifyWaiting).toBe(true);
+  });
+});

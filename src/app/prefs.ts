@@ -26,6 +26,12 @@
 //   board:            BoardConfig | null   the connected GitHub Project (owner, projectNumber, hubRepo and
 //                                          the resolved projectId, url, title); null = not configured.
 //                                          Set by Connect (board_configure), read by Rust per board call
+//   contextWindow:    number               context window in tokens the tab gauge measures against
+//                                          (50000..2000000, default 200000); a session that ever goes past
+//                                          200000 tokens uses 1000000 instead (see src/app/activity.ts)
+//   notifyWaiting:    boolean              desktop notification when a tab that is hidden (or the window
+//                                          unfocused) starts waiting: a permission prompt, a question, or
+//                                          a finished turn (default true)
 //
 // Usage from a panel:
 //   const prefs = useAtomValue(prefsAtom);
@@ -60,7 +66,12 @@ export type Prefs = {
   collapsedPaths: string[];
   expandedPaths: string[];
   board: BoardConfig | null;
+  contextWindow: number;
+  notifyWaiting: boolean;
 };
+
+export const CONTEXT_WINDOW_MIN = 50_000;
+export const CONTEXT_WINDOW_MAX = 2_000_000;
 
 export const SIDEBAR_DEFAULT = 300;
 export const SIDEBAR_MIN = 220;
@@ -85,6 +96,8 @@ export const DEFAULT_PREFS: Prefs = {
   collapsedPaths: [],
   expandedPaths: [],
   board: null,
+  contextWindow: 200_000,
+  notifyWaiting: true,
 };
 
 export const prefsAtom = atom<Prefs>(DEFAULT_PREFS);
@@ -166,6 +179,11 @@ export function sanitizePrefs(raw: unknown): Prefs {
     collapsedPaths: stringList(r.collapsedPaths, d.collapsedPaths),
     expandedPaths: stringList(r.expandedPaths, d.expandedPaths),
     board: sanitizeBoard(r.board),
+    contextWindow:
+      typeof r.contextWindow === "number" && Number.isFinite(r.contextWindow)
+        ? Math.round(Math.min(CONTEXT_WINDOW_MAX, Math.max(CONTEXT_WINDOW_MIN, r.contextWindow)))
+        : d.contextWindow,
+    notifyWaiting: typeof r.notifyWaiting === "boolean" ? r.notifyWaiting : d.notifyWaiting,
   };
 }
 

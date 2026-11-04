@@ -310,6 +310,23 @@ count only with a connected board) opens
 the Calendar, and the Projects panel marks the project of today's area with a
 `today` chip and lists it first in its group.
 
+## Tab status
+
+Every tab running Claude Code shows what that session is doing: a dot before
+the title (accent = busy, warn with a ring = waiting for you, muted = idle,
+red = exited, hollow = starting; hover it for why it waits) and a 2 px bar
+under the title with how full the context window is (green below 70 %, amber
+to 90 %, red above; hover it for the tokens and the model). Status comes from
+`~/.claude/sessions` every second, plus `claude agents --json` every 4 s
+while a session is busy to tell a permission prompt or a question from work.
+A session that finishes its turn shows as waiting until you type in its tab
+or look at it. The context is read from the end of the session transcript;
+the window is Settings, This app, "Context window" (200k by default), and a
+session that goes past 200k is measured against 1M. When a tab you are not
+looking at starts waiting, a desktop notification says so
+(`omarchy-notification-send`, else `notify-send`); turn it off with "Notify
+when a hidden tab needs you".
+
 ## Themes
 
 Settings, Appearance. A theme is a palette in the shape of an Omarchy
