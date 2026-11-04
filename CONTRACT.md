@@ -1150,8 +1150,8 @@ Sources, in order of precedence:
    code.claude.com/docs/en/agent-view): `status` adds `waiting` and
    `waitingFor`. It costs a Node start, so it runs only while at least one
    matched session is `busy` and then every 4 s, with a 3 s timeout, `claude`
-   resolved like a tab command (`~/.local/bin/claude` when executable, else
-   PATH). A `waiting` entry overrides the file's `busy` for that session. Any
+   from PATH (the `~/.local/bin/claude` launcher only when PATH has none: it
+   fetches credentials on every start, which this call does not need). A `waiting` entry overrides the file's `busy` for that session. Any
    failure is logged once per minute through `watchdog::note` and ignored.
 3. The idle-after-busy rule, front end: a session that goes from `busy` to
    `idle` becomes `waiting` with `waitingFor: "turn finished"` until the tab

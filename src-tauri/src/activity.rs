@@ -309,9 +309,14 @@ pub fn parse_agents(json: &str) -> Result<Vec<AgentEntry>, String> {
         .collect())
 }
 
-/// What a tab runs for `claude`: `~/.local/bin/claude` when executable, else
-/// `claude` from PATH.
+/// `claude` for the status poll: from PATH first, and only when PATH has none
+/// the `~/.local/bin/claude` launcher a tab would run. The launcher fetches
+/// credentials (q-ring) on every start, which `claude agents` does not need and
+/// would otherwise do every 4 s while a tab is busy.
 fn claude_program() -> PathBuf {
+    if let Some(p) = in_path("claude") {
+        return p;
+    }
     let local = crate::files::home_dir()
         .map(|h| h.join(".local/bin/claude"))
         .ok();
