@@ -46,11 +46,10 @@ cargo test
 ## Scope
 
 This is the author's daily driver, so some parts encode one person's
-workflow on purpose: the Board and Calendar wiring to a specific GitHub
-Project, the keyboard map, the `~/Develop` default and the panel order.
-**PRs that change those should start as an issue**, so we can agree on the
-shape first (for example, making the board configurable instead of swapping
-one hard-wired board for another).
+workflow on purpose: the Board's conventions (the Status, Kind, Area,
+Scheduled and Order fields of the connected GitHub Project), the keyboard
+map, the `~/Develop` default and the panel order. **PRs that change those
+should start as an issue**, so we can agree on the shape first.
 
 Generic Claude Code tooling (the panels that edit `~/.claude`, the terminal
 tabs, themes) is open for improvements as long as it keeps editing the real

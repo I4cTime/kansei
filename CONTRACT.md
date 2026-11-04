@@ -1089,3 +1089,27 @@ per call like it reads `workspaceRoots`.
 README: the Status bullet about the author's board becomes "connect your own
 GitHub Project in Settings or the Board panel", and the Board section lists the
 required fields and options above. CHANGELOG under Unreleased.
+
+### As implemented (2026-11-03)
+
+- `board_configure` validates before any gh call (owner: letters, digits,
+  `-`, `_`, `.`; project number from 1; hub repo owner/name) and, besides
+  clearing the field cache, removes `<appData>/board.json`: it may hold the
+  previous project's items, which a failed first fetch would otherwise show.
+  A field with the required name but another type counts as missing. When
+  both lookups fail the error is their GitHub messages joined with `; `.
+- The fixed copy of the 2026-11-01 Area options is gone (it was the author's
+  list). Before the first fetch, and without a board, the Area pickers (Day,
+  Rhythm, New epic) offer the names of the workspace projects instead.
+- `refreshBoard` is a no-op without a config. The Calendar's "No board
+  connected" line sits where the Unscheduled tray would be; the Day sheet
+  shows the same line instead of its tasks and "Schedule a task". Both link
+  to the Board panel. The Board panel, Calendar and Today strip ignore a
+  cached snapshot while there is no config.
+- SCHEDULE.md's header reads "from the <title> board and the weekly rhythm
+  ... Board: <url>" with a config and "from the weekly rhythm ..." without.
+- The form is `src/panels/board/BoardConnect.tsx`, shared by the setup card
+  and Settings; its README link is the repository's README, "Board".
+  Connecting toasts "Connected to <title>", then the `setupWarning` line
+  ("The project has no Order field; ordering is disabled. Status lacks the
+  option In review.") when something is missing.

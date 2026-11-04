@@ -59,12 +59,11 @@ before you install it:
   Omarchy with an NVIDIA GPU, and `src-tauri/src/main.rs` carries
   NVIDIA/WebKitGTK workarounds for that setup (see [Run](#run)). Other
   distros and GPUs should work but get no testing.
-- **Board and Calendar are wired to the author's own GitHub Project.** The
-  owner, project id, hub repo and board URL are constants (`OWNER`,
-  `PROJECT_ID`, `HUB_REPO`, `BOARD_URL` in `src-tauri/src/board.rs`, and
-  `BOARD_URL` in `src/panels/board/model.ts`). To use them with your own
-  board you change those and rebuild; making this configurable is an open
-  item. See [Board](#board).
+- **Board and Calendar need a GitHub Project of yours.** Connect your own
+  GitHub Project in Settings or the Board panel (owner, project number and a
+  hub repo for epics); the project needs a few fields, listed under
+  [Board](#board). Until then the Board shows a setup card and the Calendar
+  plans days without tasks.
 - **Everything else is generic Claude Code tooling**: Projects, Sessions,
   Memory, Rules, MCPs, Agents, Skills, Workflows, Hooks, Settings, Themes and
   the terminal tabs work on any machine with Claude Code, and they edit the
@@ -135,8 +134,8 @@ shortcuts (see [Keyboard](#keyboard)).
 - **Projects**: every project under your workspace roots as a tree; open one
   as a Claude tab, open it with related projects, describe and link them. See
   [Projects and workspaces](#projects-and-workspaces).
-- **Board**: the GitHub Project the author plans on (epics, tasks, lanes,
-  dates), read and edited through `gh`. See [Board](#board).
+- **Board**: a GitHub Project you connect (epics, tasks, lanes, dates), read
+  and edited through `gh`. See [Board](#board).
 - **Calendar**: a weekly rhythm, per-day notes and the board's scheduled
   tasks, written out to `SCHEDULE.md`. See [Calendar](#calendar).
 - **Sessions**: Claude Code history, live sessions and transcripts; resume
@@ -228,10 +227,10 @@ roots and groups), `expandedPaths` (projects with their subprojects shown).
 
 ## Board
 
-The Board panel shows the GitHub Project "I4C" (user I4cTime, number 3):
-epics (issues in the private hub repo `I4cTime/focus`, Kind Epic, Area = the
-project) and tasks (issues in the product repos, sub-issues of their epic,
-Kind Task). One collapsible section per lane (Backlog, Ready, In progress, In
+The Board panel shows a GitHub Project (v2) you connect, owned by your user
+or one of your organisations: epics (issues in a hub repo you name, Kind Epic,
+Area = the project) and tasks (issues in the product repos, sub-issues of
+their epic, Kind Task). One collapsible section per lane (Backlog, Ready, In progress, In
 review, Done; Done starts collapsed and shows the ten most recently closed),
 tasks grouped under their epic's title, a Tasks / Epics / All filter and a
 search over title, repo, area and number. Rows show the repo (or the area for
@@ -242,14 +241,41 @@ project that matches the area or repo name. The header has refresh, an "as of"
 stamp, New task (gh issue create, linked under its epic, added to the board as
 a Task) and New epic.
 
-That board is the author's own and is hard-wired today (`OWNER`,
-`PROJECT_NUMBER`, `PROJECT_ID`, `HUB_REPO` and `BOARD_URL` in
-`src-tauri/src/board.rs`, `HUB_REPO` and `BOARD_URL` in
-`src/panels/board/model.ts`). To point it at your own board, change those
-constants and rebuild; your project needs the fields Status (the five lanes
-above), Kind (Epic, Task), Area, Scheduled (date) and Order (number).
-CONTRACT.md, "Board and Calendar", has the full model. A settings-driven
-board is an open item.
+### Connecting a project
+
+Until a project is connected the Board panel shows a setup card; the same
+three fields live in Settings, This app, Board (with Reconnect and
+Disconnect):
+
+- **Owner**: the GitHub user or organisation that owns the project.
+- **Project number**: the N in `github.com/users/<owner>/projects/N` (or
+  `github.com/orgs/<owner>/projects/N`).
+- **Hub repo**: `owner/name`, the repository New epic creates its issues in.
+
+Connect looks the project up through `gh` (as a user's project, then as an
+organisation's), saves it as `board` in `prefs.json` together with its
+resolved node id, URL and title, and fetches the board. Kansei relies on
+these fields (names match case-insensitively):
+
+| Field | Type | Options |
+| --- | --- | --- |
+| Status | single select | Backlog, Ready, In progress, In review, Done |
+| Kind | single select | Epic, Task |
+| Area | single select | any (one per project; matched to workspace projects by folder name) |
+| Scheduled | date | |
+| Order | number | (rank inside Ready) |
+
+Started, Target, Done when and Outcome (dates and text) are optional; New
+epic fills Done when, so leave that box empty on a project without it. A project that lacks a required field or option still
+connects; one toast says what is missing and what stops working (no Order
+field: ordering is disabled). For example, owner `octocat`, project number
+`1`, hub repo `octocat/plans`.
+
+Without a connected project nothing is fetched: the Calendar keeps its
+rhythm, notes and activity dots with a "No board connected" line instead of
+tasks, the Today strip shows the area only, and `SCHEDULE.md` carries the
+plan without task lines. CONTRACT.md, "Board and Calendar" and "Board
+configuration", has the full model.
 
 All GitHub traffic goes through the `gh` CLI, run off the main thread and
 always without `GITHUB_TOKEN` in its environment (a Claude session's token is
@@ -279,7 +305,8 @@ startup, after every board fetch, task date change and schedule change: today,
 this week, the next 30 days, the weekly rhythm and the unscheduled tasks. The
 first time, it appends `Schedule: @SCHEDULE.md` to that root's `CLAUDE.md`
 (once; remove the line and it stays removed), so every Claude session there
-knows the plan. The sidebar's Today strip (`Today · <area> · <n> tasks`) opens
+knows the plan. The sidebar's Today strip (`Today · <area> · <n> tasks`, the
+count only with a connected board) opens
 the Calendar, and the Projects panel marks the project of today's area with a
 `today` chip and lists it first in its group.
 
@@ -383,7 +410,8 @@ cd src-tauri && cargo fmt --all --check && cargo clippy --all-targets -- -D warn
 board grouping, `areaProject`, shortcuts). `cargo test` needs the Tauri Linux
 system packages, since the crate depends on `tauri`. The Rust board tests
 replace the gh runner, so no test talks to GitHub;
-`cargo test live_board_read -- --ignored` reads (only reads) the real board.
+`cargo test live_board_read -- --ignored` reads (only reads) the board
+connected in your `prefs.json`.
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same
 checks on every push to `main` and every pull request into it.
 
