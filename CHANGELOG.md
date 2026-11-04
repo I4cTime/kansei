@@ -8,6 +8,13 @@ releases yet; everything so far is on `main` as 0.1.x.
 
 ### Added
 
+- **Tab status and context gauge** (2026-11-04). Each Claude tab shows
+  whether its session is busy, waiting for you (a permission prompt, a
+  question, or a finished turn you have not looked at yet) or idle, and a
+  thin bar with how full its context window is. A tab you are not looking at
+  that starts waiting raises a desktop notification. Settings, This app,
+  Terminal gains "Context window" and "Notify when a hidden tab needs you";
+  the Sessions panel's LIVE badge shows the status too.
 - **Board configuration** (2026-11-03). The Board and Calendar work with any
   GitHub Project (v2) you own, as a user or through an organisation: connect
   it from the Board panel's setup card or Settings, This app, Board (owner,
