@@ -47,6 +47,7 @@ name with it, and the app moves `~/.local/share/tsukue` to `kansei` on first sta
 - Ctrl+Shift+B toggle sidebar collapse
 - Ctrl+Shift+1..9 and 0 jump to the first ten sidebar sections in nav order (Projects, Board, Calendar, Sessions, Memory, Rules, MCPs, Agents, Skills, Workflows; 0 is Workflows)
 - Ctrl+Shift+H opens Hooks, Ctrl+Shift+, (comma) opens Settings (`PANEL_KEYS` in `src/app/shortcuts.ts`; the nav tooltips come from `panelShortcut`)
+- Ctrl+Shift+P opens the command palette (see "Command palette")
 - Esc closes the editor sheet, Ctrl+S saves inside it
 
 ## Rust commands (all `#[tauri::command]`, args are camelCase JSON objects)
@@ -1299,3 +1300,85 @@ release" paragraph under Development. CHANGELOG under Unreleased.
   `kansei-arch`.
 - `bundles` and `arch` need `create-release` and run when it succeeded or
   was skipped (dry run). Concurrency cancels in-progress PR runs only.
+
+## Command palette (added 2026-11-04)
+
+Ctrl+Shift+P opens a fuzzy command palette over the terminal column through the
+overlay host (Esc and a backdrop click close it as for any overlay; the same
+shortcut toggles it). Ctrl+K stays with the shell. Task kansei#9.
+
+### Commands
+
+```ts
+type Command = {
+  id: string;                       // stable: "tab:<key>", "panel:<id>", "project:<path>", ...
+  group: "Tabs" | "Panels" | "Projects" | "Sessions" | "Board" | "Themes";
+  title: string;                    // what is matched and shown
+  hint?: string;                    // muted, right of the title: path, time, lane
+  keywords?: string[];              // extra match terms, not shown
+  disabled?: string;                // shown greyed with this reason, not runnable
+  run: () => void | Promise<void>;
+};
+```
+
+Builders in `src/app/palette/commands.ts`, one pure function per group taking
+the atoms' values as arguments (so tests feed fixtures):
+
+- Tabs: "Switch to <title>" per tab (hint: cwd tildified; the active tab is
+  listed last), then New tab, New shell tab, Close tab, Restart tab, Rename tab
+  (rename puts the rail item into edit mode via the existing `renameTab` flow).
+- Panels: "Open <label>" per `PANELS` entry (hint: its shortcut from
+  `panelShortcut`), Toggle sidebar.
+- Projects: every project and subproject in `treeAtom` (not roots or groups):
+  "Open <name>" runs `claude` in that folder in a new tab (hint: path relative to
+  its root); "Open <name> with related" when the registry lists related paths
+  (uses the existing Open with... action).
+- Sessions: the 40 most recent from `sessions.list()` (fetched when the palette
+  opens if the Sessions panel has not loaded them; cached for the open palette):
+  "Resume <title>" (hint: project basename and relative time); `disabled:
+  "Already running"` when live.
+- Board (only with a board connected and a snapshot): for tasks in Ready,
+  "Start <title>" (Status -> In progress); for tasks In progress, "Review
+  <title>" (-> In review) and "Finish <title>" (-> Done); for In review,
+  "Finish <title>". Hint: repo#number. Plus "Refresh board".
+- Themes: "Theme: <name>" for Match system, Dark, Light, Follow Omarchy and
+  every preset (the active one gets `hint: "active"`), "Toggle visual effects",
+  "Toggle Claude Code theme".
+
+### Matching and order
+
+`src/app/palette/fuzzy.ts`: `score(query, text): number | null` is a
+case-insensitive subsequence match over `title` then each keyword, taking the
+best. Score = 100 for an exact prefix, otherwise per matched character: +3 at a
+word start, +2 adjacent to the previous match, +1 elsewhere, minus the gap count;
+null when a query character is missing. Results sort by score desc, then group
+order (Tabs, Panels, Projects, Sessions, Board, Themes), then title. At most 40
+rows. The empty query lists recent commands first (ids in `prefs.paletteRecent`,
+newest first, at most 8, saved when a command runs), then the groups in order
+with Tabs and Panels complete and the other groups cut to 6 each.
+
+### UI
+
+`src/app/palette/Palette.tsx`: a 560 px wide sheet, top aligned 10 % down, max
+height 60 %. One text input (autofocus, placeholder "Type a command"), the
+result list with the group label on the right in muted text and the hint after
+the title, the selected row highlighted with the accent. Up/Down move, Enter
+runs the selected row and closes, click runs, Esc closes. Disabled rows are
+skipped by the keys and show their reason. `openPalette()` / `closePalette()`
+in `src/app/palette/index.ts` set the overlay; the shortcut action `palette`
+(Ctrl+Shift+P, code KeyP) is added to `src/app/shortcuts.ts` and `keyboard.ts`.
+Dev driver: `t.palette.{openPalette, closePalette, buildCommands, score}`.
+
+### Tests
+
+`fuzzy.test.ts`: prefix beats scattered, word starts beat mid-word, missing
+character is null, ordering of a known set. `commands.test.ts`: each builder
+against fixtures (tabs, panels, a small tree with a related entry, sessions
+with one live, a board snapshot with items in each lane, theme prefs), ids
+stable, disabled reasons, recent ordering and the 8-item cap.
+
+### Docs
+
+README Keyboard section and a "Command palette" line under Panels or Run;
+CONTRACT "Keyboard" gets the shortcut; CHANGELOG under Unreleased; prefs.ts doc
+comment for `paletteRecent`.
