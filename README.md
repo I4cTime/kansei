@@ -74,6 +74,14 @@ before you install it:
 
 ## Install
 
+### Releases
+
+Tagged releases on the
+[Releases page](https://github.com/I4cTime/kansei/releases) carry an
+AppImage, a `.deb`, an `.rpm` and an Arch package (`.pkg.tar.zst`, install
+with `sudo pacman -U`). The AppImage needs `chmod +x Kansei_*.AppImage` before
+it runs. Until the first tag, build from source as below.
+
 ### Requirements
 
 - [Claude Code](https://claude.com/claude-code) (`claude` on
@@ -431,6 +439,26 @@ replace the gh runner, so no test talks to GitHub;
 connected in your `prefs.json`.
 CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same
 checks on every push to `main` and every pull request into it.
+
+### Cutting a release
+
+[`.github/workflows/release.yml`](.github/workflows/release.yml) builds the
+AppImage, deb and rpm on Ubuntu and the Arch package in an `archlinux`
+container. To release `X.Y.Z`: bump `version` in `src-tauri/tauri.conf.json`,
+`src-tauri/Cargo.toml` and `package.json` and move `[Unreleased]` in
+`CHANGELOG.md` to `[X.Y.Z] - date`, all in one commit "Version X.Y.Z" through a
+PR. After it merges, tag the merge commit and push the tag:
+
+```sh
+git tag -a vX.Y.Z -m "Kansei vX.Y.Z" && git push origin vX.Y.Z
+```
+
+The workflow checks the tag against the three version fields, creates a
+draft release with generated notes, uploads the four files and publishes it
+(as a pre-release when the tag has a hyphen, like `v0.2.0-rc1`). A manual run
+(Actions, Release, Run workflow) and any pull request that touches the
+workflow, `packaging/` or `tauri.conf.json` is a dry run: the same builds,
+with the files attached to the run as artifacts and no release.
 
 ### Design of record
 

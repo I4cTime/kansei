@@ -1,0 +1,248 @@
+name: Release
+
+# A pushed v* tag builds the Linux bundles and the Arch package and publishes
+# them as a GitHub release. Every other trigger is a dry run: the same builds,
+# with the files attached to the workflow run as artifacts and no release.
+# See CONTRACT.md, "Release pipeline".
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and attach the files to the run, no release (a manual run is always a dry run; releases come from a pushed v* tag)"
+        type: boolean
+        default: true
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - packaging/**
+      - src-tauri/tauri.conf.json
+
+concurrency:
+  group: release-${{ github.ref }}
+  # Never cancel a tag run half way through a release; PR dry runs may be.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  check-version:
+    name: Check version
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Tag matches tauri.conf.json, Cargo.toml and package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          conf="$(jq -r .version src-tauri/tauri.conf.json)"
+          pkg="$(jq -r .version package.json)"
+          cargo="$(grep -m1 '^version *=' src-tauri/Cargo.toml | sed -E 's/^version *= *"([^"]+)".*/\1/')"
+          status=0
+          for pair in "src-tauri/tauri.conf.json=$conf" "src-tauri/Cargo.toml=$cargo" "package.json=$pkg"; do
+            file="${pair%%=*}"
+            version="${pair#*=}"
+            if [ "$version" != "$tag" ]; then
+              echo "::error file=$file::tag $GITHUB_REF_NAME wants version $tag, $file has $version"
+              status=1
+            fi
+          done
+          if [ "$status" -eq 0 ]; then
+            echo "Version $tag matches the tag in all three files."
+          fi
+          exit "$status"
+
+  create-release:
+    name: Create draft release
+    needs: check-version
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.create-release.outputs.result }}
+    steps:
+      - name: Create draft release
+        id: create-release
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const tag = context.ref.replace('refs/tags/', '');
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              name: `Kansei ${tag}`,
+              draft: true,
+              prerelease: false,
+              generate_release_notes: true,
+            });
+            return data.id;
+
+  bundles:
+    name: Bundles (AppImage, deb, rpm)
+    needs: create-release
+    # Runs when create-release succeeded (tag) or was skipped (dry run).
+    if: ${{ !cancelled() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.0.10 (version from package.json packageManager)
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: src-tauri
+          key: release
+
+      # The Tauri Linux deps as in ci.yml, plus what bundling needs: patchelf
+      # and file for the AppImage (linuxdeploy). deb and rpm are written by
+      # the Tauri bundler itself.
+      - name: Install Tauri Linux system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev librsvg2-dev libxdo-dev libayatana-appindicator3-dev \
+            patchelf file
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and upload to the release
+        if: github.event_name == 'push'
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+
+      - name: Build (dry run)
+        if: github.event_name != 'push'
+        run: pnpm tauri build
+
+      - name: Upload AppImage (dry run)
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kansei-appimage
+          path: src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+
+      - name: Upload deb (dry run)
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kansei-deb
+          path: src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+
+      - name: Upload rpm (dry run)
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kansei-rpm
+          path: src-tauri/target/release/bundle/rpm/*.rpm
+          if-no-files-found: error
+
+  arch:
+    name: Arch package
+    needs: create-release
+    if: ${{ !cancelled() && (needs.create-release.result == 'success' || needs.create-release.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    permissions:
+      contents: write
+    steps:
+      # git must be in the container before checkout, or actions/checkout
+      # falls back to a tarball with no .git (and makepkg clones from .git).
+      # The list is the PKGBUILD's depends and makedepends (rust provides
+      # cargo), plus base-devel and sudo for makepkg and github-cli for the
+      # release upload.
+      - name: Install build deps
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel git sudo github-cli \
+            nodejs pnpm rust \
+            webkit2gtk-4.1 gtk3 cairo gdk-pixbuf2 glib2 libsoup3 dbus gcc-libs glibc hicolor-icon-theme
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # pkgver() runs git describe --tags.
+          fetch-depth: 0
+
+      # makepkg refuses to run as root. The workspace is cloned by makepkg
+      # through KANSEI_SOURCE, which follows the source repo's HEAD, so give
+      # the (detached) checkout a branch for HEAD to point at.
+      - name: Prepare the build user
+        run: |
+          git config --system --add safe.directory '*'
+          git checkout -B release-build
+          useradd -m builder
+          chown -R builder: "$GITHUB_WORKSPACE"
+
+      - name: makepkg
+        working-directory: packaging/arch
+        run: |
+          sudo -u builder -H env KANSEI_SOURCE="file://$GITHUB_WORKSPACE" makepkg -f --noconfirm
+          ls -l ./*.pkg.tar.zst
+
+      - name: Upload to the release
+        if: github.event_name == 'push'
+        working-directory: packaging/arch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$GITHUB_REF_NAME" ./*.pkg.tar.zst --clobber
+
+      - name: Upload Arch package (dry run)
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: kansei-arch
+          path: packaging/arch/*.pkg.tar.zst
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [create-release, bundles, arch]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the draft
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            const tag = context.ref.replace('refs/tags/', '');
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: Number(process.env.RELEASE_ID),
+              draft: false,
+              prerelease: tag.includes('-'),
+            });
