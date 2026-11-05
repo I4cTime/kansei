@@ -125,6 +125,8 @@ pub async fn memory_projects() -> Result<Vec<MemoryProject>, String> {
 
 /// The index file of a memory dir; not a note.
 const INDEX: &str = "MEMORY.md";
+/// The memory types the graph reports; anything else is null.
+const TYPES: [&str; 4] = ["user", "feedback", "project", "reference"];
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -290,7 +292,7 @@ fn read_dir_notes(dir: &Path, dir_idx: usize, project: Option<&str>) -> Vec<Pars
                     title: first_h1(front.body).unwrap_or_else(|| name.clone()),
                     name: if is_index { INDEX.to_string() } else { name },
                     description: front.description,
-                    kind: front.kind,
+                    kind: front.kind.filter(|k| TYPES.contains(&k.as_str())),
                     project: project.map(str::to_string),
                     bytes: text.len() as u64,
                     links: 0,
@@ -738,7 +740,14 @@ mod tests {
     fn node_json_shape() {
         let (_t, a, b) = two_dirs();
         note(&a, "a1.md", Some("alpha"), "");
+        let odd = a.join("odd.md");
+        fs::write(&odd, "---\nmetadata:\n  type: weird\n---\n").unwrap();
         let g = build_graph(&dirs(&a, &b));
+        assert_eq!(
+            node(&g, &odd.to_string_lossy()).kind,
+            None,
+            "unknown type is null"
+        );
         let json = serde_json::to_value(&g.nodes[0]).unwrap();
         for key in [
             "id",
