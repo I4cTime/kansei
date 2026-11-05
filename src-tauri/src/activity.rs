@@ -326,7 +326,7 @@ fn claude_program() -> PathBuf {
     }
 }
 
-fn is_executable(p: &Path) -> bool {
+pub(crate) fn is_executable(p: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
 }
@@ -695,7 +695,7 @@ pub fn start(app: &AppHandle) {
 // ---------------------------------------------------------------------------
 
 /// `name` in PATH, or None.
-fn in_path(name: &str) -> Option<PathBuf> {
+pub(crate) fn in_path(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path)
         .map(|d| d.join(name))
