@@ -6,6 +6,7 @@ mod mcp_health;
 mod memory;
 mod projects;
 mod pty;
+mod scratch;
 mod search;
 mod sessions;
 mod theme;
@@ -60,6 +61,7 @@ pub fn run() {
             mcp_health::mcp_health_check,
             mcp_health::mcp_health_cached,
             sessions::sessions_list,
+            scratch::scratch_list,
             search::search_index_refresh,
             search::search_sessions,
             usage::usage_refresh,
