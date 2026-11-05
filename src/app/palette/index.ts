@@ -14,6 +14,7 @@ import { CLAUDE, prefsAtom, savePrefs, setPrefs } from "../prefs";
 import { store, toastError } from "../store";
 import { activateTab, activeKeyAtom, closeTab, newTabWithPicker, openTab, requestRename, restartTab, SHELL_COMMAND, tabsAtom } from "../tabs";
 import { rightKey, splitWith, unsplit } from "../split";
+import { toggleScratch } from "../scratchState";
 import { PRESETS } from "../theme/presets";
 import { buildCommands, type Command, type PaletteActions, type PaletteInput } from "./commands";
 import { pushRecent } from "./fuzzy";
@@ -65,6 +66,7 @@ export const actions: PaletteActions = {
   unsplit,
   openPanel: (id) => setPrefs({ sidebarSection: id, sidebarCollapsed: false }),
   toggleSidebar: () => setPrefs({ sidebarCollapsed: !store.get(prefsAtom).sidebarCollapsed }),
+  toggleScratch,
   openProject: (path, name) => void openTab({ cwd: path, command: CLAUDE, title: name }),
   openProjectWith: (ref, related) =>
     void openWithSheet({ path: ref.node.path, label: ref.node.name, items: pickItems(store.get(treeAtom) ?? [], homeDir), exclude: [ref.node.path], related, home: homeDir }),
@@ -98,6 +100,7 @@ export function liveInput(sessions: PaletteInput["sessions"] = null): PaletteInp
     snapshot: store.get(snapshotAtom),
     theme: { theme: prefs.theme, effects: prefs.effects, claudeTheme: prefs.claudeTheme },
     presets: PRESETS,
+    scratchOpen: prefs.scratchOpen,
   };
 }
 

@@ -49,6 +49,8 @@ export type PaletteActions = {
   unsplit: () => void;
   openPanel: (id: string) => void;
   toggleSidebar: () => void;
+  /** Open or close the prompt scratchpad drawer. */
+  toggleScratch: () => void;
   /** claude in `path`, in a new tab titled `name`. */
   openProject: (path: string, name: string) => void;
   /** The Projects panel's Open with... sheet, related projects checked. */
@@ -133,8 +135,8 @@ export function tabCommands(tabs: Tab[], activeKey: string | null, home: string 
   return out;
 }
 
-/** "Open <label>" per panel in nav order (hint: its shortcut), then Toggle sidebar. */
-export function panelCommands(panels: { id: string; label: string }[], act: PaletteActions): Command[] {
+/** "Open <label>" per panel in nav order (hint: its shortcut), then Toggle sidebar and Open (or Close) scratchpad. */
+export function panelCommands(panels: { id: string; label: string }[], act: PaletteActions, scratchOpen = false): Command[] {
   const out: Command[] = panels.map((p, i) => ({
     id: `panel:${p.id}`,
     group: "Panels",
@@ -144,6 +146,14 @@ export function panelCommands(panels: { id: string; label: string }[], act: Pale
     run: () => act.openPanel(p.id),
   }));
   out.push({ id: "sidebar:toggle", group: "Panels", title: "Toggle sidebar", hint: "Ctrl+Shift+B", run: () => act.toggleSidebar() });
+  out.push({
+    id: "scratch:toggle",
+    group: "Panels",
+    title: scratchOpen ? "Close scratchpad" : "Open scratchpad",
+    hint: "Ctrl+Shift+Space",
+    keywords: ["prompt", "draft", "compose"],
+    run: () => act.toggleScratch(),
+  });
   return out;
 }
 
@@ -324,13 +334,15 @@ export type PaletteInput = {
   snapshot: BoardSnapshot | null;
   theme: ThemeState;
   presets: Pick<Preset, "id" | "name">[];
+  /** The prompt scratchpad drawer is open (prefs.scratchOpen). */
+  scratchOpen?: boolean;
 };
 
 /** Every command, groups in order (Tabs, Panels, Projects, Sessions, Board, Themes). */
 export function buildCommands(input: PaletteInput, act: PaletteActions): Command[] {
   return [
     ...tabCommands(input.tabs, input.activeKey, input.home, act, input.rightKey ?? null),
-    ...panelCommands(input.panels, act),
+    ...panelCommands(input.panels, act, input.scratchOpen ?? false),
     ...projectCommands(input.tree, input.registry, act),
     ...sessionCommands(input.sessions, input.now, input.home, act),
     ...boardCommands(input.boardConnected, input.snapshot, act),

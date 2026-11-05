@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
-import { Columns2, Plus, X } from "lucide-react";
+import { Columns2, Pencil, Plus, X } from "lucide-react";
 import { activateTab, activeKeyAtom, closeTab, newTabWithPicker, renameRequestAtom, renameTab, tabsAtom, type Tab } from "./tabs";
 import { activityAtom, dotFor, gaugeFor, isExtended, tabActivity, type DotLook } from "./activity";
 import { prefsAtom } from "./prefs";
 import { draggedTabAtom, effectiveRight, splitAtom, splitWith, unsplit } from "./split";
 import { accentVar } from "./accents";
 import { accentOfAtom, accentsOnAtom } from "./accentState";
+import { scratchOpenAtom, toggleScratch } from "./scratchState";
 import { store } from "./store";
 import { IconButton } from "./ui";
 
@@ -19,6 +20,7 @@ export function TabRail() {
   const right = effectiveRight(split, tabs.map((t) => t.key), activeKey);
   const scroller = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<Menu | null>(null);
+  const scratchOpen = useAtomValue(scratchOpenAtom);
   const closeMenu = useCallback(() => setMenu(null), []);
 
   // Keep the active tab in view.
@@ -46,6 +48,15 @@ export function TabRail() {
       </div>
       <div className="flex shrink-0 items-center px-1">
         <IconButton icon={Plus} label="New tab (Ctrl+Shift+T)" size="sm" onClick={() => void newTabWithPicker()} />
+        <IconButton
+          icon={Pencil}
+          label={`${scratchOpen ? "Close" : "Open"} the scratchpad (Ctrl+Shift+Space)`}
+          size="sm"
+          aria-pressed={scratchOpen}
+          data-scratch-toggle
+          className={scratchOpen ? "text-accent hover:text-accent" : ""}
+          onClick={toggleScratch}
+        />
       </div>
       <div className="flex-1" />
       {menu && <TabMenu menu={menu} isRight={menu.key === right} canSplit={tabs.length > 1} onClose={closeMenu} />}

@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { OverlayHost } from "./OverlayHost";
 import { Sidebar } from "./Sidebar";
 import { TabRail } from "./TabRail";
+import { Scratchpad } from "./Scratchpad";
+import { startScratch } from "./scratchState";
 import { TerminalArea } from "./TerminalArea";
 import { ToastHost } from "./ToastHost";
 import { installShortcuts } from "./keyboard";
@@ -34,6 +36,7 @@ async function boot() {
   startCalendar();
   startMcpHealth().catch((e) => toastError(e, "Could not listen for MCP health results"));
   await restoreTabs();
+  startScratch();
 }
 
 export default function App() {
@@ -49,6 +52,7 @@ export default function App() {
       <Sidebar />
       <main className="relative flex min-w-0 flex-1 flex-col">
         <TabRail />
+        <Scratchpad />
         <TerminalArea />
         <OverlayHost />
       </main>

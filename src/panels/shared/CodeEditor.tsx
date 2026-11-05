@@ -2,8 +2,8 @@
 // follows dark/light without rebuilding the view.
 import { useEffect, useRef } from "react";
 import { basicSetup } from "codemirror";
-import { EditorState, type Extension } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { EditorState, Prec, type Extension } from "@codemirror/state";
+import { EditorView, keymap, placeholder as placeholderExt, type KeyBinding } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { markdown } from "@codemirror/lang-markdown";
 import { json } from "@codemirror/lang-json";
@@ -70,6 +70,7 @@ const tokenTheme = EditorView.theme({
   ".cm-button": { backgroundImage: "none", backgroundColor: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: "4px" },
   ".cm-tooltip": { backgroundColor: "var(--bg-raised)", color: "var(--fg)", border: "1px solid var(--border)" },
   ".cm-tooltip-autocomplete ul li[aria-selected]": { backgroundColor: "var(--accent)", color: "var(--accent-fg)" },
+  ".cm-placeholder": { color: "var(--fg-muted)" },
   ".cm-foldPlaceholder": { backgroundColor: "var(--bg-hover)", border: "none", color: "var(--fg-muted)" },
 });
 
@@ -98,6 +99,10 @@ export function CodeEditor({
   autoFocus,
   readOnly,
   className,
+  keys,
+  placeholder,
+  extensions,
+  onView,
 }: {
   /** Initial document. Changing it later does not reset the editor; remount with a key instead. */
   value: string;
@@ -108,10 +113,24 @@ export function CodeEditor({
   /** Display only: no edits, no caret. Changing it remounts the view. */
   readOnly?: boolean;
   className?: string;
+  /**
+   * Extra key bindings, ahead of basicSetup's (Prec.highest), e.g.
+   * `[{ key: "Mod-Enter", run: () => { send(); return true; } }]`. Read at
+   * mount, like `value`; route changing behaviour through refs or module state.
+   */
+  keys?: readonly KeyBinding[];
+  /** Muted text shown while the document is empty. Read at mount. */
+  placeholder?: string;
+  /** More extensions (dom event handlers, ...). Read at mount. */
+  extensions?: Extension;
+  /** The view after it is created, and null when it is destroyed. */
+  onView?: (view: EditorView | null) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onViewRef = useRef(onView);
+  onViewRef.current = onView;
 
   useEffect(() => {
     if (!host.current) return;
@@ -126,6 +145,9 @@ export function CodeEditor({
           tokenTheme,
           wrap ? EditorView.lineWrapping : [],
           readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [],
+          keys?.length ? Prec.highest(keymap.of(keys)) : [],
+          placeholder ? placeholderExt(placeholder) : [],
+          extensions ?? [],
           EditorView.updateListener.of((u) => {
             if (u.docChanged) onChangeRef.current?.(u.state.doc.toString());
           }),
@@ -133,8 +155,12 @@ export function CodeEditor({
       }),
     });
     if (autoFocus) view.focus();
-    return () => view.destroy();
-    // value is initial only; lang/wrap/readOnly changes remount.
+    onViewRef.current?.(view);
+    return () => {
+      onViewRef.current?.(null);
+      view.destroy();
+    };
+    // value, keys, placeholder and extensions are initial only; lang/wrap/readOnly changes remount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lang, wrap, readOnly]);
 
