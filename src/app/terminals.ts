@@ -297,6 +297,18 @@ export function scheduleFit(key: string) {
   });
 }
 
+/**
+ * Write `data` to a tab's pty as if typed (the path keyboard input takes).
+ * False, and nothing written, unless the tab is alive with a pty.
+ */
+export function writeToTab(key: string, data: string): boolean {
+  const tab = getTab(key);
+  if (!tab?.id || tab.status !== "alive") return false;
+  pty.write(tab.id, data).catch((e) => toastError(e, "Could not write to the terminal"));
+  noteTabInput(key, data);
+  return true;
+}
+
 export function focusTerminal(key: string) {
   if (store.get(overlayAtom)) return;
   entries.get(key)?.term.focus();

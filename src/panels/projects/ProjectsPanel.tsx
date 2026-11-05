@@ -589,6 +589,12 @@ function ProjectRowView({
       className={cx("group relative py-1.5 pr-3 hover:bg-bg-hover", r.hidden && "opacity-50 hover:opacity-100 focus-within:opacity-100")}
       style={{ paddingLeft: 12 + indent * 14 }}
       data-project={r.path}
+      // Drop a row on the scratchpad editor for an @reference (text/plain = the path).
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "copy";
+        e.dataTransfer.setData("text/plain", r.path);
+      }}
     >
       <div className="flex min-w-0 items-center gap-1.5">
         {toggle && (

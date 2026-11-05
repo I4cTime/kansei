@@ -7,6 +7,7 @@ import { store } from "./store";
 import { closeActiveTab, cycleTab, newTabWithPicker } from "./tabs";
 import { togglePalette } from "./palette";
 import { toggleSplit } from "./split";
+import { toggleScratch } from "./scratchState";
 
 function run(a: ShortcutAction) {
   switch (a.type) {
@@ -39,6 +40,9 @@ function run(a: ShortcutAction) {
     case "toggleSplit":
       toggleSplit();
       return;
+    case "toggleScratch":
+      toggleScratch();
+      return;
   }
 }
 
@@ -63,7 +67,7 @@ export function installShortcuts(): () => void {
     if (!action) return;
     e.preventDefault();
     e.stopPropagation();
-    if (e.repeat && (action.type === "newTab" || action.type === "closeTab" || action.type === "palette" || action.type === "toggleSplit")) return;
+    if (e.repeat && (action.type === "newTab" || action.type === "closeTab" || action.type === "palette" || action.type === "toggleSplit" || action.type === "toggleScratch")) return;
     run(action);
   };
   window.addEventListener("keydown", onKey, true);

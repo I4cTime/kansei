@@ -33,6 +33,9 @@ import { accentOfAtom, activeAccentAtom } from "./accentState";
 import { checkAll as mcpCheckAll, checkServers as mcpCheckServers, checkingAtom as mcpCheckingAtom, failedCountAtom as mcpFailedCountAtom, healthAtom as mcpHealthAtom } from "../panels/mcps/health";
 import { mcpHealth as mcpHealthIpc } from "../lib/ipc";
 import { graphAtom as memoryGraphAtom, graphLoadingAtom as memoryGraphLoadingAtom, reload as memoryGraphReload } from "../panels/memory/graphState";
+import { activeProject as scratchActiveProject, clearDraft as scratchClearDraft, closeScratch, flushDraft as scratchFlush, insertRefs as scratchInsertRefs, openScratch, pickDraft as scratchPickDraft, requestClear as scratchRequestClear, scratchKeyAtom, scratchOpenAtom, scratchTextAtom, sendDraft as scratchSendDraft, setText as scratchSetText, toggleScratch } from "./scratchState";
+import { clampScratchHeight, draftPath as scratchDraftPath, encodeKey as scratchEncodeKey, frameDraft as scratchFrameDraft, refFor as scratchRefFor } from "./scratch";
+import { scratch as scratchIpc } from "../lib/ipc";
 import { graphHash as memoryGraphHash, layout as memoryGraphLayout, layoutCached as memoryGraphLayoutCached } from "../panels/memory/graph";
 
 declare global {
@@ -114,6 +117,35 @@ export function installDriver() {
      * ms }: what the panel draws, cached by graphHash) and loadingAtom.
      */
     memoryGraph: { graphAtom: memoryGraphAtom, layout: memoryGraphLayout, reload: memoryGraphReload, layoutCached: memoryGraphLayoutCached, graphHash: memoryGraphHash, loadingAtom: memoryGraphLoadingAtom },
+    /**
+     * Prompt scratchpad: openAtom (prefs.scratchOpen), textAtom, keyAtom ({ key, project, explicit } | null),
+     * sendDraft("submit" | "paste") (false with a toast when the tab cannot receive), setText(text) (saved after
+     * 400 ms), toggle(); also open(), close(), flush() (write the pending draft now), clear(), requestClear(),
+     * insertRefs(paths, pos?), pickDraft(key, project), activeProject(), list() (scratch_list), and the pure
+     * encodeKey, draftPath, refFor, frameDraft, clampHeight(h, column).
+     */
+    scratch: {
+      openAtom: scratchOpenAtom,
+      textAtom: scratchTextAtom,
+      keyAtom: scratchKeyAtom,
+      sendDraft: scratchSendDraft,
+      setText: scratchSetText,
+      toggle: toggleScratch,
+      open: openScratch,
+      close: closeScratch,
+      flush: scratchFlush,
+      clear: scratchClearDraft,
+      requestClear: scratchRequestClear,
+      insertRefs: scratchInsertRefs,
+      pickDraft: scratchPickDraft,
+      activeProject: scratchActiveProject,
+      list: scratchIpc.list,
+      encodeKey: scratchEncodeKey,
+      draftPath: scratchDraftPath,
+      refFor: scratchRefFor,
+      frameDraft: scratchFrameDraft,
+      clampHeight: clampScratchHeight,
+    },
     /** querySelector that throws a readable error when nothing matches. */
     q(sel: string): HTMLElement {
       const el = document.querySelector<HTMLElement>(sel);

@@ -228,6 +228,19 @@ export const memory = {
   graph: () => invoke<MemoryGraph>("memory_graph"),
 };
 
+/** A prompt scratchpad draft, `<appData>/scratch/<key>.md` (CONTRACT.md "Prompt scratchpad"). */
+export type ScratchDraft = {
+  key: string; // the encoded project path (the file stem)
+  project: string | null; // the path the key decodes to on this filesystem, null when nothing resolves
+  bytes: number;
+  modifiedMs: number;
+};
+
+export const scratch = {
+  /** Every draft, newest first. Reads and writes go through `files`. */
+  list: () => invoke<ScratchDraft[]>("scratch_list"),
+};
+
 export const sessions = {
   list: () => invoke<Session[]>("sessions_list"),
 };

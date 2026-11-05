@@ -43,6 +43,10 @@
 //   memoryView:       "list" | "graph"     the Memory panel's view: the per-project list, or the node graph of
 //                                          the [[links]] between every memory note (default "list"; anything
 //                                          else reads as "list", see src/panels/memory/graph.ts)
+//   scratchOpen:      boolean              the prompt scratchpad drawer above the terminal is open (default
+//                                          false; Ctrl+Shift+Space, see src/app/scratchState.ts)
+//   scratchHeight:    number               the drawer's height in px (default 220; at least 120, at most 4000
+//                                          here; drawn at most 60 % of the terminal column, see src/app/scratch.ts)
 //
 // Usage from a panel:
 //   const prefs = useAtomValue(prefsAtom);
@@ -54,6 +58,7 @@ import { atom } from "jotai";
 import { files, projects, type BoardConfig } from "../lib/ipc";
 import { debounce, getPaths, joinPath, store, toastError } from "./store";
 import { findPreset } from "./theme/presets";
+import { SCRATCH_DEFAULT, SCRATCH_MIN, SCRATCH_PREF_MAX } from "./scratch";
 
 export type NewTabCommand = "claude" | "shell";
 export type BuiltinTheme = "system" | "dark" | "light";
@@ -83,6 +88,8 @@ export type Prefs = {
   projectAccents: boolean;
   mcpHealthAtStartup: boolean;
   memoryView: MemoryView;
+  scratchOpen: boolean;
+  scratchHeight: number;
 };
 
 export type MemoryView = "list" | "graph";
@@ -121,6 +128,8 @@ export const DEFAULT_PREFS: Prefs = {
   projectAccents: true,
   mcpHealthAtStartup: true,
   memoryView: "list",
+  scratchOpen: false,
+  scratchHeight: SCRATCH_DEFAULT,
 };
 
 export const prefsAtom = atom<Prefs>(DEFAULT_PREFS);
@@ -211,6 +220,11 @@ export function sanitizePrefs(raw: unknown): Prefs {
     projectAccents: typeof r.projectAccents === "boolean" ? r.projectAccents : d.projectAccents,
     mcpHealthAtStartup: typeof r.mcpHealthAtStartup === "boolean" ? r.mcpHealthAtStartup : d.mcpHealthAtStartup,
     memoryView: r.memoryView === "graph" ? "graph" : r.memoryView === "list" ? "list" : d.memoryView,
+    scratchOpen: typeof r.scratchOpen === "boolean" ? r.scratchOpen : d.scratchOpen,
+    scratchHeight:
+      typeof r.scratchHeight === "number" && Number.isFinite(r.scratchHeight)
+        ? Math.round(Math.min(SCRATCH_PREF_MAX, Math.max(SCRATCH_MIN, r.scratchHeight)))
+        : d.scratchHeight,
   };
 }
 

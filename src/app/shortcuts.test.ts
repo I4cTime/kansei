@@ -25,6 +25,14 @@ describe("shortcuts", () => {
     expect(matchShortcut(key("Backslash", { ctrlKey: true }))).toBeNull();
   });
 
+  it("maps Ctrl+Shift+Space to the scratchpad and leaves Ctrl+Enter and Ctrl+L to the editor", () => {
+    expect(matchShortcut(key("Space"))).toEqual({ type: "toggleScratch" });
+    expect(matchShortcut(key("Space", { ctrlKey: true }))).toBeNull();
+    expect(matchShortcut(key("Enter", { ctrlKey: true, key: "Enter" }))).toBeNull();
+    expect(matchShortcut(key("Enter", { ctrlKey: true, shiftKey: true, key: "Enter" }))).toBeNull();
+    expect(matchShortcut(key("KeyL", { ctrlKey: true, key: "l" }))).toBeNull();
+  });
+
   it("labels the nav hints", () => {
     expect(panelShortcut("board", 1)).toBe("Ctrl+Shift+2");
     expect(panelShortcut("workflows", 9)).toBe("Ctrl+Shift+0");

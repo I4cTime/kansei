@@ -49,6 +49,7 @@ name with it, and the app moves `~/.local/share/tsukue` to `kansei` on first sta
 - Ctrl+Shift+H opens Hooks, Ctrl+Shift+, (comma) opens Settings (`PANEL_KEYS` in `src/app/shortcuts.ts`; the nav tooltips come from `panelShortcut`)
 - Ctrl+Shift+P opens the command palette (see "Command palette")
 - Ctrl+Shift+\ toggles the split terminal (see "Split terminal")
+- Ctrl+Shift+Space toggles the prompt scratchpad (see "Prompt scratchpad")
 - Esc closes the editor sheet, Ctrl+S saves inside it
 
 ## Rust commands (all `#[tauri::command]`, args are camelCase JSON objects)
@@ -181,7 +182,8 @@ The files allowlist needed no change: `~/.claude/**` was already readable.
   every spawn and restart, so a pref change applies to restored tabs too.
 - `prefs.json`: `{ newTabCommand: "claude" | "shell", claudeCommand: string, fontSize: number, fontFamily: string, theme: "system" | "dark" | "light",
   sidebarWidth, sidebarCollapsed, sidebarSection, pinnedProjects: string[], hiddenProjects: string[],
-  workspaceRoots: string[], collapsedPaths: string[], expandedPaths: string[] }` (see `src/app/prefs.ts`).
+  workspaceRoots: string[], collapsedPaths: string[], expandedPaths: string[], scratchOpen: boolean, scratchHeight: number }` (see `src/app/prefs.ts`;
+  `scratchOpen` and `scratchHeight` are the prompt scratchpad's drawer, see "Prompt scratchpad").
 - `claudeCommand` (default `""`, trimmed): the executable a Claude tab runs.
   `claudeCommand(prefs, local, home)` in `src/app/prefs.ts` returns the pref
   when non-empty (a leading `~/` expanded), else `<home>/.local/bin/claude`
@@ -204,6 +206,9 @@ The files allowlist needed no change: `~/.claude/**` was already readable.
   buckets and `index.json` (see "Usage"). A cache like `search/`.
 - `mcp-health.json`: `{ results: Record<key, McpHealth> }`, the last probe
   result per MCP server key, merged on every check (see "MCP health").
+- `scratch/`: prompt scratchpad drafts, `<key>.md` per project (the project
+  path encoded like Claude's project dirs); an empty draft has no file (see
+  "Prompt scratchpad").
 
 ## Visual language
 
@@ -2106,3 +2111,141 @@ comment for `memoryView`.
   (`data-faded` when filtered out), `[data-graph-tooltip]`,
   `[data-graph-legend]`, `[data-context-menu]`, `[data-memory-path]` on list
   rows.
+
+## Prompt scratchpad (added 2026-11-04)
+
+A drawer above the active terminal to compose long prompts in CodeMirror and
+send them to the tab's pty on a keystroke. Drafts persist per project. Task
+kansei#16.
+
+### Model
+
+- The drawer lives in the terminal column, between the tab rail and the
+  terminal area, full width, height from `prefs.scratchHeight` (px, 120 to 60 %
+  of the column, default 220), with a 6 px drag handle on its bottom edge
+  (pointer events, same style as the split divider). Open state is
+  `prefs.scratchOpen` (default false). Opening or resizing refits the terminals
+  below through the existing ResizeObserver.
+- Drafts: `<appData>/scratch/<key>.md` where `key` is the active tab's project
+  path (`tabProject` from accents.ts, else the cwd) encoded like Claude's
+  project dirs (`/` -> `-`). Switching the active tab switches the draft; the
+  text is saved 400 ms after the last edit and on close, through `files.writeText`
+  (atomic on the Rust side). An empty draft deletes its file. `scratch_list()`
+  lists `{ key, project, bytes, modifiedMs }` for the drafts menu.
+- Sending (`sendDraft(mode)`): the text, with a trailing newline removed, goes to
+  the active tab's pty wrapped in bracketed paste (`\x1b[200~` ... `\x1b[201~`)
+  so multi-line text does not submit line by line; mode `"submit"` appends `\r`
+  after the paste, mode `"paste"` does not. The active tab must be alive and
+  running (a shell or claude); otherwise a toast says why. After `"submit"` the
+  draft is kept until the user clears it (Ctrl+L in the editor or the Clear
+  button): a sent prompt is often reused.
+- References: dropping a Projects tree row (the rows become draggable with
+  `text/plain` = the path) or a file from the OS (Tauri `onDragDropEvent`
+  paths) into the editor inserts `@<path>` at the cursor, one per line when
+  several; a path inside the active tab's project is made relative to it. The
+  "@" button in the drawer header opens the native file picker for the same
+  insertion.
+
+### UI
+
+- Header row of the drawer: "Scratchpad" label, the project basename of the
+  draft (title = path), a Drafts menu (recent drafts from `scratch_list` by
+  modified time; picking one switches the key explicitly until the next tab
+  change), "@" (file picker), Clear, and the send buttons "Paste" and "Send"
+  (Send is primary; both disabled with a title when the tab cannot receive).
+- Editor: `CodeEditor` from `src/panels/shared/CodeEditor.tsx` with the markdown
+  language, line wrapping, the theme's mono font, placeholder "Compose a prompt.
+  Ctrl+Enter sends, Ctrl+Shift+Enter pastes without submitting, drop files for
+  @references." Keymap inside the editor: Ctrl+Enter = submit, Ctrl+Shift+Enter
+  = paste, Ctrl+L = clear (with the Clear confirm when over 200 characters), Esc
+  = focus the terminal (the drawer stays open).
+- Toggle: Ctrl+Shift+Space (shortcut action `toggleScratch`, code Space with
+  shift and ctrl), the palette commands "Open scratchpad" / "Close scratchpad",
+  and a Pencil icon button at the right end of the tab rail. Opening focuses
+  the editor.
+- Dev driver: `t.scratch.{openAtom, textAtom, keyAtom, sendDraft, setText, toggle}`.
+- `src/lib/ipc.ts`: `scratch.list()`.
+
+### Rust
+
+`scratch_list() -> ScratchDraft[]` over `<appData>/scratch/*.md` (name, size,
+mtime); reads and writes go through the existing `fs_*` commands, which already
+allow the app data dir. Test: list on a temp dir.
+
+### Tests
+
+`scratch.test.ts`: key encoding, relative path rule for references, the
+bracketed-paste framing for both modes, the save debounce (fake timers),
+height clamp.
+
+### Docs
+
+README Run section (a Scratchpad paragraph) and Keyboard; CONTRACT Keyboard
+and Persistence lines; CHANGELOG under Unreleased; prefs.ts doc comment.
+
+### As implemented (2026-11-04)
+
+- Modules: `src/app/scratch.ts` is pure (key encoding, `draftPath`,
+  `draftProject`, `refFor`, `refsText`, `spliceRefs`, `droppedPaths`,
+  `frameDraft`, `clampScratchHeight`, `sendBlocker`, `createSaver`) and tested
+  in `scratch.test.ts`; the live atoms and actions are in
+  `src/app/scratchState.ts`; the drawer is `src/app/Scratchpad.tsx`, rendered
+  between `TabRail` and `TerminalArea` and not at all while closed (the
+  terminal area is then at the same place and size as before).
+- Key: the same encoding as `memory.rs` (`encode`): every character that is not
+  an ASCII letter or digit becomes `-`, which for ordinary paths is the
+  `/` -> `-` rule (`/home/me/Develop/lab/kansei` ->
+  `-home-me-Develop-lab-kansei`) and also makes dots and spaces file-name safe,
+  as Claude's own project dirs do. `scratch_list` (`src-tauri/src/scratch.rs`)
+  decodes `project` with `memory::decode_project_path` (null when nothing
+  resolves), newest first. The draft follows the active tab only while the
+  drawer is open (opening re-syncs it); with no tab the last draft stays. A
+  tree scan that moves a tab into a deeper or shallower project switches the
+  draft too.
+- Saving: one pending write at a time (`createSaver`): a write for another key
+  goes out first, switching drafts and closing the drawer flush, Clear deletes
+  the file right away. A failed write toasts "Could not save the draft".
+- Sending: through `writeToTab` in terminals.ts (the keyboard's pty path, which
+  also marks the tab seen); exactly one trailing newline (`\n` or `\r\n`) is
+  removed, and paste markers inside the text are dropped so it cannot end the
+  bracketed paste early. An empty draft toasts "The draft is empty" (and the
+  buttons are disabled with that title). The blocked reasons are "No tab
+  open", "The tab is still starting", "The tab has exited" and "The tab is not
+  running". After a send the active terminal gets the focus; the drawer stays
+  open and the text stays.
+- References: a drop inserts at the drop point (CodeMirror moves the cursor
+  there for any drop); the "@" picker and `insertRefs` without a position at
+  the cursor. A space is added before or after when the reference would touch
+  a word. The path equal to the active tab's project is `@.`. Projects rows
+  set `text/plain` to their path; an editor drop is taken as references only
+  when every line of `text/plain` is an absolute path (other text drops as
+  CodeMirror inserts it), and a rail tab dropped on the editor is ignored. OS
+  file drops come from `getCurrentWebview().onDragDropEvent` (no new
+  permission: `core:event:default` covers its listeners); the drop position
+  (physical px) is divided by `devicePixelRatio` and must be inside the
+  editor, which shows a 2 px accent outline while files hover over it.
+  `dragDropEnabled` stays on: on Linux wry claims only drops that carry file
+  URIs, so the in-page Projects row drag reaches the webview, as the rail
+  tab drag for the split does.
+- Height: the handle sets `scratchHeight` to the pointer's distance from the
+  drawer's top, clamped to 120 px .. 60 % of the terminal column (measured at
+  pointer down); double click resets 220. prefs.json keeps 120..4000 and the
+  drawer applies the column share when drawing. The drawer takes the rail's
+  2 px bottom edge in the active tab's accent; the terminal area keeps its own
+  top border below the handle.
+- Keymap: Mod-Enter, Mod-Shift-Enter, Mod-l and Escape at `Prec.highest`;
+  Escape first lets an open search panel close, then cancels the Clear
+  confirm, then focuses the terminal. `CodeEditor` gained `keys`,
+  `placeholder`, `extensions` and `onView` (all read at mount).
+- Focus: opening focuses the editor (after StrictMode's second mount); a
+  drawer that is open at startup does not take the focus from the terminal.
+  Closing focuses the active terminal.
+- Palette: one command, id `scratch:toggle`, in the Panels group after Toggle
+  sidebar, titled "Open scratchpad" or "Close scratchpad" (hint
+  Ctrl+Shift+Space).
+- Header: a NotebookPen icon before the "Scratchpad" label; the Drafts menu
+  shows each draft's project basename, its path and age, the current one
+  highlighted.
+- Dev driver: `t.scratch` also has `open`, `close`, `flush`, `clear`,
+  `requestClear`, `insertRefs`, `pickDraft`, `activeProject`, `list` and the
+  pure `encodeKey`, `draftPath`, `refFor`, `frameDraft`, `clampHeight`.

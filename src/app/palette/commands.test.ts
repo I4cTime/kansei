@@ -15,6 +15,7 @@ const act = (): PaletteActions => ({
   unsplit: vi.fn(),
   openPanel: vi.fn(),
   toggleSidebar: vi.fn(),
+  toggleScratch: vi.fn(),
   openProject: vi.fn(),
   openProjectWith: vi.fn(),
   resumeSession: vi.fn(),
@@ -98,11 +99,11 @@ describe("tabCommands", () => {
 });
 
 describe("panelCommands", () => {
-  it("opens each panel with its shortcut as the hint, then Toggle sidebar", () => {
+  it("opens each panel with its shortcut as the hint, then Toggle sidebar and the scratchpad", () => {
     const a = act();
     const panels = ["projects", "board", "calendar", "sessions", "memory", "rules", "mcps", "agents", "skills", "workflows", "hooks", "settings"].map((id) => ({ id, label: id[0].toUpperCase() + id.slice(1) }));
     const list = panelCommands(panels, a);
-    expect(list).toHaveLength(13);
+    expect(list).toHaveLength(14);
     expect(list[0]).toMatchObject({ id: "panel:projects", title: "Open Projects", hint: "Ctrl+Shift+1" });
     expect(list[9].hint).toBe("Ctrl+Shift+0");
     expect(list[10]).toMatchObject({ id: "panel:hooks", hint: "Ctrl+Shift+H" });
@@ -112,6 +113,10 @@ describe("panelCommands", () => {
     void list[12].run();
     expect(a.openPanel).toHaveBeenCalledWith("settings");
     expect(a.toggleSidebar).toHaveBeenCalled();
+    expect(list[13]).toMatchObject({ id: "scratch:toggle", title: "Open scratchpad", hint: "Ctrl+Shift+Space" });
+    void list[13].run();
+    expect(a.toggleScratch).toHaveBeenCalled();
+    expect(panelCommands(panels, a, true)[13]).toMatchObject({ id: "scratch:toggle", title: "Close scratchpad" });
   });
 });
 
