@@ -11,6 +11,8 @@ const act = (): PaletteActions => ({
   closeTab: vi.fn(),
   restartTab: vi.fn(),
   renameTab: vi.fn(),
+  splitWith: vi.fn(),
+  unsplit: vi.fn(),
   openPanel: vi.fn(),
   toggleSidebar: vi.fn(),
   openProject: vi.fn(),
@@ -42,7 +44,7 @@ describe("tabCommands", () => {
 
   it("lists Switch to per tab with the active one last, then the tab actions", () => {
     const list = tabCommands(tabs, "b", HOME, act());
-    expect(list.map((c) => c.id)).toEqual(["tab:a", "tab:c", "tab:b", "tab:new", "tab:new-shell", "tab:close", "tab:restart", "tab:rename"]);
+    expect(list.map((c) => c.id)).toEqual(["tab:a", "tab:c", "tab:b", "tab:new", "tab:new-shell", "tab:close", "tab:restart", "tab:rename", "split:a", "split:c"]);
     expect(list[0]).toMatchObject({ group: "Tabs", title: "Switch to q-ring", hint: "~/Develop/products/q-ring" });
     expect(list[1].hint).toBe("~");
     expect(list.find((c) => c.id === "tab:new-shell")!.hint).toBe("~/Develop/lab/kansei");
@@ -64,6 +66,23 @@ describe("tabCommands", () => {
     expect(a.newShellTab).toHaveBeenCalledWith("/home/me/Develop/lab/kansei");
     const dead = tabCommands([tab("d", "dead", "/x", "dead")], "d", HOME, a);
     expect(dead.find((c) => c.id === "tab:restart")!.disabled).toBeUndefined();
+  });
+
+  it("offers Split with per other tab and Close the right pane while split", () => {
+    const a = act();
+    const list = tabCommands(tabs, "b", HOME, a, "c");
+    const split = list.filter((c) => c.id.startsWith("split:"));
+    expect(split.map((c) => [c.id, c.title, c.disabled ?? null])).toEqual([
+      ["split:a", "Split with q-ring", null],
+      ["split:c", "Split with ~", "Already on the right"],
+      ["split:close", "Close the right pane", null],
+    ]);
+    expect(split[0].hint).toBe("~/Develop/products/q-ring");
+    void split[0].run();
+    void split[2].run();
+    expect(a.splitWith).toHaveBeenCalledWith("a");
+    expect(a.unsplit).toHaveBeenCalled();
+    expect(tabCommands(tabs, "b", HOME, a).some((c) => c.id === "split:close")).toBe(false);
   });
 
   it("disables the active-tab actions without tabs", () => {

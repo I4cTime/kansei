@@ -14,6 +14,7 @@ import { prefsAtom } from "../prefs";
 import { getPaths, store, toastError } from "../store";
 import { activeKeyAtom, tabsAtom } from "../tabState";
 import { focusTerminal } from "../terminals";
+import { splitAtom } from "../split";
 import { overlayAtom } from "../../lib/overlay";
 import { TRANSCRIPT_BELOW_ROWS, TRANSCRIPT_ROWS, transcriptCommands, type Command } from "./commands";
 import { rank } from "./fuzzy";
@@ -32,6 +33,7 @@ function step(rows: Command[], from: number, dir: 1 | -1): number {
 export function Palette() {
   const tabs = useAtomValue(tabsAtom);
   const activeKey = useAtomValue(activeKeyAtom);
+  const split = useAtomValue(splitAtom);
   const prefs = useAtomValue(prefsAtom);
   const tree = useAtomValue(treeAtom);
   const registry = useAtomValue(registryAtom);
@@ -74,7 +76,7 @@ export function Palette() {
   const commands = useMemo(
     () => commandsNow(fetched),
     // commandsNow reads these atoms from the store; they are listed so the rows follow them.
-    [tabs, activeKey, prefs.theme, prefs.effects, prefs.claudeTheme, tree, registry, snapshot, boardConfig, shared, fetched, home],
+    [tabs, activeKey, split, prefs.theme, prefs.effects, prefs.claudeTheme, tree, registry, snapshot, boardConfig, shared, fetched, home],
   );
   const ranked = useMemo(() => rank(commands, query, prefs.paletteRecent), [commands, query, prefs.paletteRecent]);
 

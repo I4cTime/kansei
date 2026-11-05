@@ -6,6 +6,7 @@ import { matchShortcut, type ShortcutAction } from "./shortcuts";
 import { store } from "./store";
 import { closeActiveTab, cycleTab, newTabWithPicker } from "./tabs";
 import { togglePalette } from "./palette";
+import { toggleSplit } from "./split";
 
 function run(a: ShortcutAction) {
   switch (a.type) {
@@ -35,6 +36,9 @@ function run(a: ShortcutAction) {
     case "palette":
       togglePalette();
       return;
+    case "toggleSplit":
+      toggleSplit();
+      return;
   }
 }
 
@@ -59,7 +63,7 @@ export function installShortcuts(): () => void {
     if (!action) return;
     e.preventDefault();
     e.stopPropagation();
-    if (e.repeat && (action.type === "newTab" || action.type === "closeTab" || action.type === "palette")) return;
+    if (e.repeat && (action.type === "newTab" || action.type === "closeTab" || action.type === "palette" || action.type === "toggleSplit")) return;
     run(action);
   };
   window.addEventListener("keydown", onKey, true);
