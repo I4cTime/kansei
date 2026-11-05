@@ -219,14 +219,6 @@ export function mergeActivity(days: ActivityDay[]): Map<Ymd, DayActivity> {
   return out;
 }
 
-/** A stable colour for a project's activity dot, from the terminal palette tokens. */
-const DOT_COLOURS = ["var(--t-blue)", "var(--t-magenta)", "var(--t-cyan)", "var(--t-green)", "var(--t-yellow)", "var(--t-red)"];
-export function projectColour(path: string): string {
-  let h = 0;
-  for (let i = 0; i < path.length; i++) h = (h * 31 + path.charCodeAt(i)) | 0;
-  return DOT_COLOURS[Math.abs(h) % DOT_COLOURS.length];
-}
-
 // ---------------------------------------------------------------------------
 // Atoms
 

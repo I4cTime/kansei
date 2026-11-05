@@ -17,7 +17,8 @@ import { AsOf, BoardNotice, useNow } from "../board/BoardPanel";
 import { refreshBoard, setItemField } from "../board/actions";
 import { areaOptions, boardConfigAtom, boardLoadingAtom, itemChip, projectNames, snapshotAtom } from "../board/model";
 import { NoBoardLine } from "../board/BoardConnect";
-import { treeAtom } from "../projects/workspaceStore";
+import { registryAtom, treeAtom } from "../projects/workspaceStore";
+import { accentFor, accentVar } from "../../app/accents";
 import { StatusDot } from "../board/StatusDot";
 import {
   WEEKDAY_SHORT,
@@ -30,7 +31,6 @@ import {
   monthGrid,
   monthLabel,
   monthOf,
-  projectColour,
   scheduleAtom,
   shortDayLabel,
   todayAtom,
@@ -121,13 +121,15 @@ function projectLabel(path: string, home?: string): string {
 }
 
 function ActivityStrip({ list, home, compact }: { list: DayActivity | undefined; home?: string; compact?: boolean }) {
+  // Dots keep their colours with prefs.projectAccents off; an Accent set in the Edit sheet applies here too.
+  const registry = useAtomValue(registryAtom);
   if (!list || list.length === 0) return null;
   const tip = list.map((a) => `${projectLabel(a.project, home)}: ${plural(a.count, "prompt")}`).join("\n");
   const shown = compact ? list.slice(0, 4) : list;
   return (
     <div className={cx("flex flex-wrap items-center", compact ? "gap-px" : "mt-1 gap-1")} title={tip} data-activity="">
       {shown.map((a) => (
-        <span key={a.project} className={cx("inline-block rounded-full", compact ? "h-1 w-1" : "h-1.5 w-1.5")} style={{ background: projectColour(a.project) }} />
+        <span key={a.project} className={cx("inline-block rounded-full", compact ? "h-1 w-1" : "h-1.5 w-1.5")} style={{ background: accentVar(accentFor(a.project, registry)) }} />
       ))}
       {!compact && <span className="text-[10px] text-fg-muted tabular-nums">{list.reduce((n, a) => n + a.count, 0)}</span>}
     </div>

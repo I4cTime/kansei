@@ -84,3 +84,12 @@ describe("sanitizePrefs paletteRecent", () => {
     expect(sanitizePrefs({ paletteRecent: ten }).paletteRecent).toEqual(ten.slice(0, 8));
   });
 });
+
+describe("sanitizePrefs projectAccents", () => {
+  it("defaults to on and keeps a boolean", () => {
+    expect(DEFAULT_PREFS.projectAccents).toBe(true);
+    expect(sanitizePrefs({}).projectAccents).toBe(true);
+    expect(sanitizePrefs({ projectAccents: false }).projectAccents).toBe(false);
+    expect(sanitizePrefs({ projectAccents: "off" }).projectAccents).toBe(true);
+  });
+});

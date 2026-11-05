@@ -32,6 +32,8 @@ import {
 } from "./workspace";
 import { registryAtom, saveEntry, saveRelated, scanWorkspaces, treeAtom } from "./workspaceStore";
 import { areaProject } from "../board/model";
+import { accentFor, accentVar } from "../../app/accents";
+import { accentsOnAtom } from "../../app/accentState";
 import { scheduleAtom, todayAtom, todayPlan } from "../calendar/model";
 
 /** `nodes` with the one that is (or contains) `path` moved to the front; order otherwise kept. */
@@ -298,6 +300,7 @@ export function ProjectsPanel() {
           title={ref.node.name}
           subtitle={tildify(ref.node.path, home)}
           entry={m.entry}
+          autoAccent={accentFor(ref.node.path, {})}
           onSave={(patch) => saveEntry(ref.root, ref.node.path, patch)}
           close={close}
         />
@@ -571,12 +574,16 @@ function ProjectRowView({
         : "No session to resume";
   const sessionsTip = r.sessionsKey ? `Show ${plural(r.sessions, "session")} in Sessions` : "No sessions here";
   const relatedTip = meta.ref ? "Related projects..." : NOT_IN_WORKSPACE;
-  const editTip = meta.ref ? "Edit description and status" : NOT_IN_WORKSPACE;
+  const editTip = meta.ref ? "Edit description, status and accent" : NOT_IN_WORKSPACE;
   const flagChips = [r.flags.claudeMd && "CLAUDE.md", r.flags.claudeDir && ".claude", r.flags.mcpJson && "mcp", r.flags.worktree && "worktree"].filter(
     (x): x is string => !!x,
   );
   const { entry } = meta;
   const act = (name: ActionName) => () => actions[name](r, meta);
+  // Tree projects: a 6 px dot in the project's accent before the name (with prefs.projectAccents on).
+  const registry = useAtomValue(registryAtom);
+  const accentsOn = useAtomValue(accentsOnAtom);
+  const accent = meta.ref && accentsOn ? accentFor(meta.ref.node.path, registry) : null;
   return (
     <div
       className={cx("group relative py-1.5 pr-3 hover:bg-bg-hover", r.hidden && "opacity-50 hover:opacity-100 focus-within:opacity-100")}
@@ -595,6 +602,7 @@ function ProjectRowView({
             {toggle.open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           </button>
         )}
+        {accent && <span data-project-accent={accent} className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: accentVar(accent) }} title={`Accent: ${accent}`} />}
         <span title={r.aliases.length > 1 ? `${r.path}\nalso recorded as ${r.aliases.filter((a) => a !== r.path).join(", ")}` : r.path} className="min-w-0 truncate text-[13px] leading-6 text-fg">
           {label}
           {!r.exists && <span className="text-fg-muted"> (missing folder)</span>}

@@ -28,6 +28,8 @@ import { rank, score } from "./palette/fuzzy";
 import { search as searchIpc } from "../lib/ipc";
 import { indexStatusAtom, indexingAtom, refreshIndex } from "../panels/sessions/search";
 import { formatTokens, loadUsage, usageDaysAtom, usageStatusAtom } from "../panels/calendar/usage";
+import { ACCENT_NAMES, accentFor, accentVar, tabAccent, tabProject } from "./accents";
+import { accentOfAtom, activeAccentAtom } from "./accentState";
 
 declare global {
   interface Window {
@@ -89,6 +91,12 @@ export function installDriver() {
      * setRatio(r) (clamped 0.3..0.7), rightKey() (the valid right tab or null), focusedPaneAtom.
      */
     split: { splitAtom, splitWith, unsplit, toggleSplit, setRatio, rightKey, focusedPaneAtom },
+    /**
+     * Project accents: accentFor(path, registry), tabProject(cwd, tree), ACCENT_NAMES, plus accentVar(name),
+     * tabAccent(cwd, tree, registry), accentOfAtom (cwd -> accent from the live tree and registry) and
+     * activeAccentAtom (the active tab's, null with the pref off).
+     */
+    accents: { accentFor, tabProject, ACCENT_NAMES, accentVar, tabAccent, accentOfAtom, activeAccentAtom },
     /** Tab status and context: activityAtom (per pty pid, after the idle-after-busy rule) and tabActivity(tab). */
     activity: { activityAtom, tabActivity },
     /** querySelector that throws a readable error when nothing matches. */

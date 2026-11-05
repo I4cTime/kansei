@@ -34,6 +34,9 @@
 //                                          a finished turn (default true)
 //   paletteRecent:    string[]             command palette ids run last, newest first (at most 8; the
 //                                          empty query lists them first, see src/app/palette)
+//   projectAccents:   boolean              tint each tab, the terminal column and the sidebar header with
+//                                          the active tab's project colour (default true; the Calendar dots
+//                                          keep their colours regardless, see src/app/accents.ts)
 //
 // Usage from a panel:
 //   const prefs = useAtomValue(prefsAtom);
@@ -71,6 +74,7 @@ export type Prefs = {
   contextWindow: number;
   notifyWaiting: boolean;
   paletteRecent: string[];
+  projectAccents: boolean;
 };
 
 export const CONTEXT_WINDOW_MIN = 50_000;
@@ -104,6 +108,7 @@ export const DEFAULT_PREFS: Prefs = {
   contextWindow: 200_000,
   notifyWaiting: true,
   paletteRecent: [],
+  projectAccents: true,
 };
 
 export const prefsAtom = atom<Prefs>(DEFAULT_PREFS);
@@ -191,6 +196,7 @@ export function sanitizePrefs(raw: unknown): Prefs {
         : d.contextWindow,
     notifyWaiting: typeof r.notifyWaiting === "boolean" ? r.notifyWaiting : d.notifyWaiting,
     paletteRecent: stringList(r.paletteRecent, d.paletteRecent).slice(0, PALETTE_RECENT_MAX),
+    projectAccents: typeof r.projectAccents === "boolean" ? r.projectAccents : d.projectAccents,
   };
 }
 

@@ -124,7 +124,7 @@ const tree: WorkspaceNode[] = [
     node("/d/sites", "group", [node("/d/sites/i4c-sites", "project", [node("/d/sites/i4c-sites/apps/niwa", "subproject")])]),
   ]),
 ];
-const registry = { "/d": { "/d/products/niwa": { description: "plants", status: null, related: ["/d/products/aibou"] } } };
+const registry = { "/d": { "/d/products/niwa": { description: "plants", status: null, related: ["/d/products/aibou"], accent: null } } };
 
 describe("projectCommands", () => {
   it("opens every project and subproject (not roots or groups), hint relative to the root", () => {

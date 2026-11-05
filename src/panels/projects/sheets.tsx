@@ -1,4 +1,4 @@
-// Sheets for the Projects panel: Edit (description + status), and the project
+// Sheets for the Projects panel: Edit (description, status, accent), and the project
 // picker used by "Related..." and "Open with...".
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, Select, TextArea, cx } from "../ui";
@@ -6,31 +6,38 @@ import { errText } from "../shared/hooks";
 import { Sheet } from "../shared/Sheet";
 import { queryWords } from "./model";
 import { STATUSES, type PickItem, type ProjectStatus, type RegistryEntry } from "./workspace";
+import { ACCENT_NAMES, accentVar, type AccentName } from "../../app/accents";
+
+type EditPatch = { description: string; status: ProjectStatus | null; accent: AccentName | null };
 
 export function EditSheet({
   title,
   subtitle,
   entry,
+  autoAccent,
   onSave,
   close,
 }: {
   title: string;
   subtitle: string;
   entry: RegistryEntry;
-  onSave: (patch: { description: string; status: ProjectStatus | null }) => Promise<void>;
+  /** The accent Auto gives this project (the hash of its path), for the Auto swatch. */
+  autoAccent: AccentName;
+  onSave: (patch: EditPatch) => Promise<void>;
   close: () => void;
 }) {
   const [description, setDescription] = useState(entry.description);
   const [status, setStatus] = useState<ProjectStatus | "">(entry.status ?? "");
+  const [accent, setAccent] = useState<AccentName | null>(entry.accent);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dirty = description.trim() !== entry.description || (status || null) !== entry.status;
+  const dirty = description.trim() !== entry.description || (status || null) !== entry.status || accent !== entry.accent;
 
   const save = async () => {
     setBusy(true);
     setError(null);
     try {
-      await onSave({ description: description.trim(), status: status || null });
+      await onSave({ description: description.trim(), status: status || null, accent });
       close();
     } catch (e) {
       setError(errText(e));
@@ -85,8 +92,39 @@ export function EditSheet({
             ))}
           </Select>
         </label>
+        <div className="flex flex-col gap-1">
+          <span id="edit-accent-label" className="text-[11px] font-medium uppercase tracking-wide text-fg-muted">
+            Accent
+          </span>
+          <div role="radiogroup" aria-labelledby="edit-accent-label" className="flex flex-wrap gap-1" data-accent-picker="">
+            {[null, ...ACCENT_NAMES].map((a) => (
+              <AccentOption key={a ?? "auto"} name={a} swatch={a ?? autoAccent} checked={accent === a} onPick={() => setAccent(a)} />
+            ))}
+          </div>
+          <span className="text-[11px] text-fg-muted">Tints this project's tabs, the terminal column and the header chip. Auto picks one from the path.</span>
+        </div>
       </div>
     </Sheet>
+  );
+}
+
+function AccentOption({ name, swatch, checked, onPick }: { name: AccentName | null; swatch: AccentName; checked: boolean; onPick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={checked}
+      data-accent-option={name ?? "auto"}
+      onClick={onPick}
+      title={name ? undefined : `Auto (${swatch})`}
+      className={cx(
+        "flex h-6 cursor-pointer items-center gap-1.5 rounded-ui border px-2 text-[12px]",
+        checked ? "border-accent bg-accent/15 text-fg" : "border-border text-fg-muted hover:bg-bg-hover hover:text-fg",
+      )}
+    >
+      <span className={cx("h-2.5 w-2.5 shrink-0 rounded-full", !name && "opacity-60")} style={{ background: accentVar(swatch) }} />
+      {name ?? "Auto"}
+    </button>
   );
 }
 

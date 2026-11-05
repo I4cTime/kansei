@@ -394,6 +394,13 @@ function Appearance({ prefs, save }: { prefs: Prefs; save: (patch: Partial<Prefs
             <span className="text-[11px] text-fg-muted">Writes ~/.claude/themes/kansei.json and sets theme to custom:kansei in ~/.claude/settings.json. The previous theme comes back with a built-in source.</span>
           </div>
         )}
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-[11px] font-medium uppercase tracking-wide text-fg-muted">Project accents</span>
+            <Toggle label="Project accents" checked={prefs.projectAccents} onChange={(v) => save({ projectAccents: v })} />
+          </div>
+          <span className="text-[11px] text-fg-muted">Tints each tab, the terminal column and the sidebar header with the project's colour (set one per project in its Edit sheet). The Calendar dots keep their colours.</span>
+        </div>
       </div>
     </>
   );

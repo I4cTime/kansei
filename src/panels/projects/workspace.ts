@@ -3,15 +3,17 @@
 // generated <root>/PROJECTS.md and tree filtering for the Projects panel.
 import type { WorkspaceNode } from "../../lib/ipc";
 import { basename, tildify } from "../shared/paths";
+import { isAccentName, type AccentName } from "../../app/accents";
 
 export type ProjectStatus = "idea" | "active" | "live" | "parked" | "archived";
 export const STATUSES: ProjectStatus[] = ["idea", "active", "live", "parked", "archived"];
 
-export type RegistryEntry = { description: string; status: ProjectStatus | null; related: string[] };
+/** `accent`: the project's colour (CONTRACT.md "Project accents"); null = automatic (a hash of the path). */
+export type RegistryEntry = { description: string; status: ProjectStatus | null; related: string[]; accent: AccentName | null };
 /** { "<root>": { "<absolute project path>": entry } } */
 export type Registry = Record<string, Record<string, RegistryEntry>>;
 
-export const EMPTY_ENTRY: RegistryEntry = { description: "", status: null, related: [] };
+export const EMPTY_ENTRY: RegistryEntry = { description: "", status: null, related: [], accent: null };
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const trimSlash = (p: string) => p.trim().replace(/\/+$/, "") || (p.trim().startsWith("/") ? "/" : "");
@@ -30,6 +32,7 @@ function sanitizeEntry(v: unknown): RegistryEntry {
     description: typeof r.description === "string" ? r.description.trim() : "",
     status: STATUSES.includes(r.status as ProjectStatus) ? (r.status as ProjectStatus) : null,
     related,
+    accent: isAccentName(r.accent) ? r.accent : null,
   };
 }
 
@@ -53,7 +56,7 @@ export function sanitizeRegistry(raw: unknown): Registry {
 }
 
 export function isEmptyEntry(e: RegistryEntry): boolean {
-  return !e.description && !e.status && e.related.length === 0;
+  return !e.description && !e.status && e.related.length === 0 && !e.accent;
 }
 
 export function entryOf(reg: Registry, root: string, path: string): RegistryEntry {
