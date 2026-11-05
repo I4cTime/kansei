@@ -49,6 +49,7 @@ name with it, and the app moves `~/.local/share/tsukue` to `kansei` on first sta
 - Ctrl+Shift+H opens Hooks, Ctrl+Shift+, (comma) opens Settings (`PANEL_KEYS` in `src/app/shortcuts.ts`; the nav tooltips come from `panelShortcut`)
 - Ctrl+Shift+P opens the command palette (see "Command palette")
 - Ctrl+Shift+\ toggles the split terminal (see "Split terminal")
+- Ctrl+Shift+Space toggles the prompt scratchpad (see "Prompt scratchpad")
 - Esc closes the editor sheet, Ctrl+S saves inside it
 
 ## Rust commands (all `#[tauri::command]`, args are camelCase JSON objects)
@@ -2106,3 +2107,74 @@ comment for `memoryView`.
   (`data-faded` when filtered out), `[data-graph-tooltip]`,
   `[data-graph-legend]`, `[data-context-menu]`, `[data-memory-path]` on list
   rows.
+
+## Prompt scratchpad (added 2026-11-04)
+
+A drawer above the active terminal to compose long prompts in CodeMirror and
+send them to the tab's pty on a keystroke. Drafts persist per project. Task
+kansei#16.
+
+### Model
+
+- The drawer lives in the terminal column, between the tab rail and the
+  terminal area, full width, height from `prefs.scratchHeight` (px, 120 to 60 %
+  of the column, default 220), with a 6 px drag handle on its bottom edge
+  (pointer events, same style as the split divider). Open state is
+  `prefs.scratchOpen` (default false). Opening or resizing refits the terminals
+  below through the existing ResizeObserver.
+- Drafts: `<appData>/scratch/<key>.md` where `key` is the active tab's project
+  path (`tabProject` from accents.ts, else the cwd) encoded like Claude's
+  project dirs (`/` -> `-`). Switching the active tab switches the draft; the
+  text is saved 400 ms after the last edit and on close, through `files.writeText`
+  (atomic on the Rust side). An empty draft deletes its file. `scratch_list()`
+  lists `{ key, project, bytes, modifiedMs }` for the drafts menu.
+- Sending (`sendDraft(mode)`): the text, with a trailing newline removed, goes to
+  the active tab's pty wrapped in bracketed paste (`\x1b[200~` ... `\x1b[201~`)
+  so multi-line text does not submit line by line; mode `"submit"` appends `\r`
+  after the paste, mode `"paste"` does not. The active tab must be alive and
+  running (a shell or claude); otherwise a toast says why. After `"submit"` the
+  draft is kept until the user clears it (Ctrl+L in the editor or the Clear
+  button): a sent prompt is often reused.
+- References: dropping a Projects tree row (the rows become draggable with
+  `text/plain` = the path) or a file from the OS (Tauri `onDragDropEvent`
+  paths) into the editor inserts `@<path>` at the cursor, one per line when
+  several; a path inside the active tab's project is made relative to it. The
+  "@" button in the drawer header opens the native file picker for the same
+  insertion.
+
+### UI
+
+- Header row of the drawer: "Scratchpad" label, the project basename of the
+  draft (title = path), a Drafts menu (recent drafts from `scratch_list` by
+  modified time; picking one switches the key explicitly until the next tab
+  change), "@" (file picker), Clear, and the send buttons "Paste" and "Send"
+  (Send is primary; both disabled with a title when the tab cannot receive).
+- Editor: `CodeEditor` from `src/panels/shared/CodeEditor.tsx` with the markdown
+  language, line wrapping, the theme's mono font, placeholder "Compose a prompt.
+  Ctrl+Enter sends, Ctrl+Shift+Enter pastes without submitting, drop files for
+  @references." Keymap inside the editor: Ctrl+Enter = submit, Ctrl+Shift+Enter
+  = paste, Ctrl+L = clear (with the Clear confirm when over 200 characters), Esc
+  = focus the terminal (the drawer stays open).
+- Toggle: Ctrl+Shift+Space (shortcut action `toggleScratch`, code Space with
+  shift and ctrl), the palette commands "Open scratchpad" / "Close scratchpad",
+  and a Pencil icon button at the right end of the tab rail. Opening focuses
+  the editor.
+- Dev driver: `t.scratch.{openAtom, textAtom, keyAtom, sendDraft, setText, toggle}`.
+- `src/lib/ipc.ts`: `scratch.list()`.
+
+### Rust
+
+`scratch_list() -> ScratchDraft[]` over `<appData>/scratch/*.md` (name, size,
+mtime); reads and writes go through the existing `fs_*` commands, which already
+allow the app data dir. Test: list on a temp dir.
+
+### Tests
+
+`scratch.test.ts`: key encoding, relative path rule for references, the
+bracketed-paste framing for both modes, the save debounce (fake timers),
+height clamp.
+
+### Docs
+
+README Run section (a Scratchpad paragraph) and Keyboard; CONTRACT Keyboard
+and Persistence lines; CHANGELOG under Unreleased; prefs.ts doc comment.
