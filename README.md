@@ -147,7 +147,10 @@ shortcuts (see [Keyboard](#keyboard)).
 - **Calendar**: a weekly rhythm, per-day notes and the board's scheduled
   tasks, written out to `SCHEDULE.md`. See [Calendar](#calendar).
 - **Sessions**: Claude Code history, live sessions and transcripts; resume
-  one into a tab.
+  one into a tab. From three characters the search box also searches the
+  text of every transcript (your prompts and Claude's replies, subagents
+  included) through a small index in the app data dir, with highlighted
+  snippets; the command palette shows those hits too when few commands match.
 - **Memory**: the `CLAUDE.md` files and the per-project memory folders under
   `~/.claude/projects`.
 - **Rules**: user and project `.claude/rules` files, with their path globs.

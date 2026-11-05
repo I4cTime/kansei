@@ -196,6 +196,8 @@ The files allowlist needed no change: `~/.claude/**` was already readable.
   `claude (PATH)`), saved through `savePrefs` on blur or Enter. Dev driver:
   `t.claude.{claudeCommandAtom, refreshClaudeCommand, spawnCommand}`.
 - `workspaces.json`: the workspace registry (see "Workspaces").
+- `search/`: the transcript text index, `<sessionId>.txt` record files and
+  `index.json` (see "Session search"). A cache: deleting it only costs a rebuild.
 
 ## Visual language
 
@@ -1491,3 +1493,48 @@ text index, not the raw files.
 ### Docs
 
 README Sessions/Panels line, CHANGELOG under Unreleased.
+
+### As implemented (2026-11-04)
+
+- Prefix check: in real transcripts only the noise lines start with
+  `{"type":"`; user, assistant, attachment and system lines start with
+  `{"parentUuid":` and an assistant line's `type` comes after its `message`.
+  So a line starting with `{"type":"` that is not user or assistant is
+  dropped unparsed, and every other line goes through a serde field visitor
+  that aborts as soon as the line cannot yield text (another `type`,
+  `isMeta`, a sidechain line, a `message` without `text` parts, which also
+  skips the large `toolUseResult` after it). Whitespace runs are collapsed to
+  one space, not just tabs and newlines replaced.
+- Subagent transcripts live at `<project>/<sessionId>/subagents/agent-*.jsonl`
+  (two levels down), so `<project>/<uuid>/` is walked two levels deep, and
+  only when `<project>/<uuid>.jsonl` exists (a deleted session's subagent
+  files drop out of the index). Every line of a subagent transcript has
+  `isSidechain: true`, so the sidechain skip applies to main transcripts
+  only; `isMeta` lines are skipped everywhere.
+- A session's records (main and subagent transcripts) share
+  `<sessionId>.txt`, sorted by time, so a change to any of its transcripts
+  re-extracts all of them. Records without a timestamp take the previous
+  record's. The index dir is 0700, its files 0600; stray `.txt` files of
+  sessions no longer indexed are removed. One refresh runs at a time.
+- `IndexStatus` also carries `sessions` (record files) and `bytes` is the
+  index size on disk; `indexed` counts transcripts read by this run. The
+  panel keeps the last status and its time in `indexStatusAtom`
+  (`src/panels/sessions/search.ts`), so "as of" and the 60 s age are per app
+  run (the first 3+ character query after a start refreshes).
+- Snippet: every term match inside the 160 characters is marked, not only
+  the first; the window is centred on the first match. A hit's title and
+  project come from `sessions_list` data, falling back to "(no prompt
+  recorded)" and the decoded project dir; `transcriptPath` is the main
+  transcript.
+- The panel filters hits by its project filter. Enter or a click on a hit
+  of a running session toasts "Already running, open in tab X" and switches
+  to that tab when it is ours. No spinner on the index Refresh button (no CSS
+  animation); the line reads "Indexing..." instead.
+- Palette: transcript rows are not ranked (appended after the ranked rows),
+  disabled "Already running" for live sessions, hint = the snippet start
+  (60 characters) without marks, and running one does not enter
+  `paletteRecent`.
+- Measured on the author's corpus (478 transcripts, 4.8 GB): first refresh
+  1.3 s in a release build (7.2 s debug), index 4.4 MB; an incremental
+  refresh 0.1 s; queries 2 ms in the release build, about 30 ms through IPC
+  in the debug app (sessions_list data included).

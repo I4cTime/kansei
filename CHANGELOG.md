@@ -8,6 +8,16 @@ releases yet; everything so far is on `main` as 0.1.x.
 
 ### Added
 
+- **Session search** (2026-11-04). The Sessions search box searches the
+  transcripts themselves from three characters on: every word must occur in
+  a message, "quoted phrases" match literally, and each session shows its
+  latest matching message with the match highlighted, the project, when it
+  was said and the hit count; Enter or a click resumes it. The text comes
+  from an index of user and assistant text (no thinking, tool calls or
+  attachments) under `~/.local/share/kansei/search/`, refreshed incrementally
+  when it is older than a minute or from its Refresh button. The command
+  palette lists up to five transcript hits when a query leaves fewer than
+  five commands.
 - **Command palette** (2026-11-04). Ctrl+Shift+P opens a fuzzy palette over
   the terminal: switch to a tab, open a new, shell, closed, restarted or
   renamed one, open any panel or toggle the sidebar, open a project (or open
