@@ -8,6 +8,17 @@ releases yet; everything so far is on `main` as 0.1.x.
 
 ### Added
 
+- **MCP health** (2026-11-04). Every MCP server (user, the active project's,
+  plugin servers) is probed with a real `initialize` handshake: stdio servers
+  are started, sent one JSON-RPC line and stopped again (8 s at most, SIGTERM
+  then SIGKILL, always reaped), http servers get the same request through
+  curl (401 or 403 means reachable, needs sign-in). The MCPs panel shows a dot
+  per server with the latency and server name in its title, failed and timed
+  out rows unfold to the stderr tail, and each row has a Check button next to
+  a Check all in the header. The MCPs nav icon gets a red dot while a fresh
+  check failed. Runs 5 s after startup unless Settings, This app, "Check MCP
+  servers at startup" is off; results are kept in `mcp-health.json`.
+
 - **Project accents** (2026-11-04). Every workspace project gets a stable
   colour from the terminal palette: a 3 px left edge on each tab, the line
   under the tab rail in the active tab's colour, the unfocused right pane's

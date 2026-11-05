@@ -202,6 +202,8 @@ The files allowlist needed no change: `~/.claude/**` was already readable.
   `index.json` (see "Session search"). A cache: deleting it only costs a rebuild.
 - `usage/`: the token usage index, `<sessionId>.json` per-day and per-model
   buckets and `index.json` (see "Usage"). A cache like `search/`.
+- `mcp-health.json`: `{ results: Record<key, McpHealth> }`, the last probe
+  result per MCP server key, merged on every check (see "MCP health").
 
 ## Visual language
 
@@ -1934,3 +1936,37 @@ type McpHealth = {
 
 README MCPs line under Panels, CHANGELOG under Unreleased, Persistence list
 gets `<appData>/mcp-health.json`, prefs.ts doc comment.
+
+### As implemented (2026-11-04)
+
+- `mcp_health.rs`: `transport_of` reads a config the way the panel's
+  `transportOf` does (`type` first, else `command` = stdio, `url` = http).
+  `type: "sse"` is skipped ("not probed": a GET stream has no single
+  answer), `streamable-http` counts as http, any other type is skipped as
+  unknown. A non-object `env` (the q-ring plugin writes `[]`) is ignored.
+- stdio children run in their own process group (`process_group(0)`); the
+  stop is SIGTERM to the group, a 1 s wait that checks the leader with
+  `waitid(WNOWAIT)` (so the group id stays reserved), SIGKILL to the group,
+  then `wait`. A server that exits without answering gives `failed` with its
+  stderr tail, or "exited (<status>) before answering initialize" when stderr
+  was empty; an `"id":1` error gives "initialize error: <message>". stdout
+  lines that are not JSON or carry another id (logs, notifications) are
+  skipped; at most 4 MB of stdout is read.
+- http: curl runs `-sS` (so failures still reach stderr) and the URL goes
+  through `--url`. Configured headers are passed on curl's stdin (`-H @-`),
+  not as `-H` arguments, so tokens never show in the process list. curl is
+  stopped by our own backstop 2 s after its `-m 8`. `ok` and `failed` carry
+  `HTTP <code>` as detail, `auth` "HTTP 401: reachable, needs sign-in".
+- Plugin keys are `plugin|<plugin>@<marketplace>|<name>`, connector keys
+  `connector||<name>`: connectors go through `mcp_health_check` too and come
+  back `skipped` ("claude.ai connector: no transport Kansei can probe"), so
+  they get a checked time like every other row.
+- `failedCount` counts fresh results only: a failure older than 24 h shows a
+  muted dot and does not light the nav dot. `checkAll` drops results for
+  user, plugin and connector servers that are no longer configured from the
+  atom (the cache keeps them); project results of other projects stay.
+- Results merge by `checkedAt` (a cached read never replaces a newer event).
+  Row keys in flight are skipped by `checkServers`; "Check all" is disabled
+  while anything is checking.
+- `Row` (shared/list.tsx) gained a `lead` slot for the dot. Dev driver also
+  exposes `checkingAtom` and `failedCountAtom`, and `t.ipc.mcpHealth`.
