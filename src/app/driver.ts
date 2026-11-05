@@ -32,6 +32,8 @@ import { ACCENT_NAMES, accentFor, accentVar, tabAccent, tabProject } from "./acc
 import { accentOfAtom, activeAccentAtom } from "./accentState";
 import { checkAll as mcpCheckAll, checkServers as mcpCheckServers, checkingAtom as mcpCheckingAtom, failedCountAtom as mcpFailedCountAtom, healthAtom as mcpHealthAtom } from "../panels/mcps/health";
 import { mcpHealth as mcpHealthIpc } from "../lib/ipc";
+import { graphAtom as memoryGraphAtom, graphLoadingAtom as memoryGraphLoadingAtom, reload as memoryGraphReload } from "../panels/memory/graphState";
+import { graphHash as memoryGraphHash, layout as memoryGraphLayout, layoutCached as memoryGraphLayoutCached } from "../panels/memory/graph";
 
 declare global {
   interface Window {
@@ -106,6 +108,12 @@ export function installDriver() {
      * checkServers(targets), checkingAtom (keys in flight), failedCountAtom (fresh failed and timeout results).
      */
     mcpHealth: { healthAtom: mcpHealthAtom, checkAll: mcpCheckAll, checkServers: mcpCheckServers, checkingAtom: mcpCheckingAtom, failedCountAtom: mcpFailedCountAtom },
+    /**
+     * Memory graph: graphAtom (the last memory_graph result, null until loaded), layout(graph, seed, iterations?)
+     * (pure, 0..1 positions per node id), reload() (memory_graph again), plus layoutCached(graph) ({ hash, positions,
+     * ms }: what the panel draws, cached by graphHash) and loadingAtom.
+     */
+    memoryGraph: { graphAtom: memoryGraphAtom, layout: memoryGraphLayout, reload: memoryGraphReload, layoutCached: memoryGraphLayoutCached, graphHash: memoryGraphHash, loadingAtom: memoryGraphLoadingAtom },
     /** querySelector that throws a readable error when nothing matches. */
     q(sel: string): HTMLElement {
       const el = document.querySelector<HTMLElement>(sel);

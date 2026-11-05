@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAtomValue } from "jotai";
-import { BookOpen, Plus, Trash } from "lucide-react";
+import { BookOpen, List, Network, Plus, Trash } from "lucide-react";
 import { files, memory, type MemoryProject } from "../../lib/ipc";
 import { projectAtom } from "../../app/project";
-import { Button, IconButton, Select } from "../ui";
+import { prefsAtom, savePrefs, type MemoryView } from "../../app/prefs";
+import { Button, IconButton, Select, cx } from "../ui";
 import { useOpenEditorTracked } from "../shared/EditorSheet";
 import { getPaths, useLoad, usePaths, useToast } from "../shared/hooks";
 import { loadDocs, matches, type Doc } from "../shared/docs";
 import { ConfirmBar, EmptyState, InlinePrompt, Note, Panel, Row, SearchInput, SectionHeader } from "../shared/list";
 import { basename, joinPath, slugify, tildify } from "../shared/paths";
+import { MemoryGraphView } from "./MemoryGraphView";
+import { graphAtom, graphLoadingAtom, reload as reloadGraph } from "./graphState";
+import { nodeMatches } from "./graph";
 
 const TYPES = ["user", "feedback", "project", "reference"] as const;
 const TYPE_LABEL: Record<string, string> = { user: "User", feedback: "Feedback", project: "Project", reference: "Reference", other: "Untyped" };
@@ -44,6 +48,40 @@ The rule or fact, stated plainly.
 `;
 }
 
+/** The header's List / Graph switch (prefs.memoryView). */
+function ViewSwitch({ value, onChange }: { value: MemoryView; onChange: (v: MemoryView) => void }) {
+  const items = [
+    { id: "list", label: "List", icon: List, title: "List view: one project's memories by type" },
+    { id: "graph", label: "Graph", icon: Network, title: "Graph view: every memory note and the [[links]] between them" },
+  ] as const;
+  return (
+    <div role="radiogroup" aria-label="Memory view" data-memory-view={value} className="flex rounded-ui border border-border bg-bg-sunken p-0.5">
+      {items.map((it) => {
+        const on = value === it.id;
+        return (
+          <button
+            key={it.id}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            title={it.title}
+            onClick={() => onChange(it.id)}
+            className={cx(
+              "inline-flex items-center gap-1 rounded-ui px-1.5 py-0.5 text-[11px] font-medium cursor-pointer",
+              on ? "bg-bg-raised text-fg shadow-sm" : "text-fg-muted hover:text-fg",
+            )}
+          >
+            <it.icon size={12} strokeWidth={2} />
+            {it.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const dirOf = (path: string) => path.slice(0, path.lastIndexOf("/"));
+
 export function MemoryPanel() {
   const paths = usePaths();
   const toast = useToast();
@@ -55,6 +93,11 @@ export function MemoryPanel() {
   const [q, setQ] = useState("");
   const [creating, setCreating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const view = useAtomValue(prefsAtom).memoryView;
+  const graph = useAtomValue(graphAtom);
+  const graphLoading = useAtomValue(graphLoadingAtom);
+  /** A note "Reveal in list" picked from the graph: highlighted and scrolled to in the list. */
+  const [revealed, setRevealed] = useState<string | null>(null);
 
   const projects = useLoad(
     useCallback(async () => {
@@ -86,9 +129,47 @@ export function MemoryPanel() {
     [project?.dir],
   );
 
+  // The graph loads the first time the graph view shows.
+  useEffect(() => {
+    if (view === "graph" && !graph) void reloadGraph();
+  }, [view, graph]);
+
+  // Scroll a revealed note into view once its project's list is loaded.
+  useEffect(() => {
+    if (!revealed || view !== "list" || !docs.data?.some((d) => d.path === revealed)) return;
+    document.querySelector(`[data-memory-path="${CSS.escape(revealed)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [revealed, view, docs.data]);
+
   const refresh = () => {
     void projects.reload();
     void docs.reload();
+    if (view === "graph" || graph) void reloadGraph();
+  };
+
+  const labelFor = (noteId: string) => {
+    const dir = dirOf(noteId);
+    const p = projects.data?.find((x) => x.dir === dir);
+    return p ? projectLabel(p, paths?.home) : basename(dir.replace(/\/memory$/, ""));
+  };
+
+  const openNote = (path: string) =>
+    openEditor({
+      path,
+      onSaved: () => {
+        void docs.reload();
+        void reloadGraph();
+      },
+    });
+
+  const reveal = (path: string) => {
+    const p = projects.data?.find((x) => x.dir === dirOf(path));
+    if (!p) return;
+    const node = graph?.nodes.find((n) => n.id === path);
+    if (q && node && !nodeMatches(q, node)) setQ("");
+    setManual(true);
+    setSelected(p.encoded);
+    setRevealed(path);
+    void savePrefs({ memoryView: "list" });
   };
 
   const groups = useMemo(() => {
@@ -143,18 +224,43 @@ export function MemoryPanel() {
 
   const total = docs.data?.length ?? 0;
 
+  const viewSwitch = <ViewSwitch value={view} onChange={(v) => void savePrefs({ memoryView: v })} />;
+
+  if (view === "graph") {
+    return (
+      <Panel title="Memory" loading={projects.loading || graphLoading} onRefresh={refresh} actions={viewSwitch}>
+        <div className="flex h-full min-h-0 flex-col">
+          <SearchInput value={q} onChange={setQ} placeholder="Filter memories" />
+          <div className="min-h-0 flex-1 pt-2">
+            {graph ? (
+              <MemoryGraphView graph={graph} q={q} projectLabel={labelFor} onOpen={openNote} onReveal={reveal} />
+            ) : (
+              <Note>{graphLoading ? "Reading every memory folder..." : "No graph yet."}</Note>
+            )}
+          </div>
+        </div>
+      </Panel>
+    );
+  }
+
   return (
     <Panel
       title="Memory"
       loading={projects.loading || docs.loading}
       onRefresh={refresh}
-      actions={<IconButton icon={Plus} title="New memory" onClick={() => setCreating(true)} disabled={!project} />}
+      actions={
+        <>
+          {viewSwitch}
+          <IconButton icon={Plus} title="New memory" onClick={() => setCreating(true)} disabled={!project} />
+        </>
+      }
     >
       <div className="flex flex-col gap-2 px-3 pt-3">
         <Select
           value={selected ?? ""}
           onChange={(e) => {
             setManual(true);
+            setRevealed(null);
             setSelected(e.target.value || null);
           }}
           title={project?.guessedPath ?? project?.encoded ?? ""}
@@ -193,7 +299,7 @@ export function MemoryPanel() {
         />
       )}
 
-      {total > 6 && <SearchInput value={q} onChange={setQ} placeholder="Filter memories" />}
+      {(total > 6 || q) && <SearchInput value={q} onChange={setQ} placeholder="Filter memories" />}
 
       {project && docs.data && total === 0 && (
         <EmptyState title="No memories yet">Claude Code writes one file per memory here, indexed by MEMORY.md. Use + to add one by hand.</EmptyState>
@@ -203,14 +309,17 @@ export function MemoryPanel() {
         <div key={type}>
           <SectionHeader title={TYPE_LABEL[type]} count={list.length} />
           {list.map((d) => (
-            <div key={d.path}>
+            <div key={d.path} data-memory-path={d.path}>
               <Row
                 title={d.meta.name || d.file}
                 subtitle={d.meta.description || d.firstLine}
                 clamp={2}
                 tooltip={d.path}
-                active={openPath === d.path}
-                onClick={() => openEditor({ path: d.path, onSaved: () => void docs.reload() })}
+                active={openPath === d.path || revealed === d.path}
+                onClick={() => {
+                  setRevealed(null);
+                  openEditor({ path: d.path, onSaved: () => void docs.reload() });
+                }}
                 actions={<IconButton icon={Trash} title={`Delete ${d.file}`} danger onClick={() => setConfirmDelete(d.path)} />}
               />
               {confirmDelete === d.path && (

@@ -93,3 +93,14 @@ describe("sanitizePrefs projectAccents", () => {
     expect(sanitizePrefs({ projectAccents: "off" }).projectAccents).toBe(true);
   });
 });
+
+describe("sanitizePrefs memoryView", () => {
+  it("defaults to the list and keeps list or graph only", () => {
+    expect(DEFAULT_PREFS.memoryView).toBe("list");
+    expect(sanitizePrefs({}).memoryView).toBe("list");
+    expect(sanitizePrefs({ memoryView: "graph" }).memoryView).toBe("graph");
+    expect(sanitizePrefs({ memoryView: "list" }).memoryView).toBe("list");
+    expect(sanitizePrefs({ memoryView: "tree" }).memoryView).toBe("list");
+    expect(sanitizePrefs({ memoryView: true }).memoryView).toBe("list");
+  });
+});

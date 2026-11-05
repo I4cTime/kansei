@@ -40,6 +40,9 @@
 //   mcpHealthAtStartup: boolean            probe every MCP server (user, plugin and the active project's)
 //                                          with an initialize handshake 5 s after startup; results in
 //                                          <appData>/mcp-health.json (default true, see src/panels/mcps/health.ts)
+//   memoryView:       "list" | "graph"     the Memory panel's view: the per-project list, or the node graph of
+//                                          the [[links]] between every memory note (default "list"; anything
+//                                          else reads as "list", see src/panels/memory/graph.ts)
 //
 // Usage from a panel:
 //   const prefs = useAtomValue(prefsAtom);
@@ -79,7 +82,10 @@ export type Prefs = {
   paletteRecent: string[];
   projectAccents: boolean;
   mcpHealthAtStartup: boolean;
+  memoryView: MemoryView;
 };
+
+export type MemoryView = "list" | "graph";
 
 export const CONTEXT_WINDOW_MIN = 50_000;
 export const CONTEXT_WINDOW_MAX = 2_000_000;
@@ -114,6 +120,7 @@ export const DEFAULT_PREFS: Prefs = {
   paletteRecent: [],
   projectAccents: true,
   mcpHealthAtStartup: true,
+  memoryView: "list",
 };
 
 export const prefsAtom = atom<Prefs>(DEFAULT_PREFS);
@@ -203,6 +210,7 @@ export function sanitizePrefs(raw: unknown): Prefs {
     paletteRecent: stringList(r.paletteRecent, d.paletteRecent).slice(0, PALETTE_RECENT_MAX),
     projectAccents: typeof r.projectAccents === "boolean" ? r.projectAccents : d.projectAccents,
     mcpHealthAtStartup: typeof r.mcpHealthAtStartup === "boolean" ? r.mcpHealthAtStartup : d.mcpHealthAtStartup,
+    memoryView: r.memoryView === "graph" ? "graph" : r.memoryView === "list" ? "list" : d.memoryView,
   };
 }
 
