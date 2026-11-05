@@ -1417,3 +1417,77 @@ comment for `paletteRecent`.
   focuses the active terminal again.
 - Dev driver: `t.palette.buildCommands()` returns the live commands (no
   arguments), plus `rank(commands, query, recent)`.
+
+## Session search (added 2026-11-04)
+
+Full text search across every transcript, with jump to resume. Task kansei#10.
+The corpus is large (4.8 GB over 477 files on the author's machine, 129 of them
+over 5 MB) and most of it is noise for search (thinking blocks, tool payloads,
+`api-request-blob`, `attachment` lines), so the search runs over an extracted
+text index, not the raw files.
+
+### Index (`src-tauri/src/search.rs`)
+
+- Location: `<appData>/search/<sessionId>.txt`, one record per line:
+  `<ts ms>\t<role u|a>\t<text>` with tabs and newlines in the text replaced by
+  spaces and the text cut at 4000 characters. Plus `<appData>/search/index.json`:
+  `{ version: 1, files: { "<transcript path>": { size, mtimeMs, sessionId, project } } }`.
+- What is extracted, per transcript line: `type == "user"` with
+  `message.content` a string, or its `text` parts; `type == "assistant"` with
+  the `text` parts of `message.content` only (no `thinking`, no `tool_use`).
+  Lines of any other type are skipped without parsing beyond the type prefix
+  (check the raw line starts with `{"type":"user"` or `{"type":"assistant"`
+  before `serde_json`). `isMeta` or `isSidechain` lines are skipped. Subagent
+  transcripts in subdirectories are indexed too and attributed to the session
+  dir they live under.
+- `search_index_refresh() -> IndexStatus { files, indexed, skipped, bytes, tookMs }`:
+  walks `~/.claude/projects/*/` (and one level of subdirs) for `*.jsonl`,
+  re-extracts a file when its size or mtime differs from index.json, removes
+  index entries whose transcript is gone, writes index.json atomically. Runs on
+  a blocking thread; the first run over the author's corpus must stay under a
+  minute (measure and report). Started automatically when the Sessions panel
+  search field receives a query longer than 2 characters and the index is
+  older than 60 s, and by the Refresh button.
+- `search_sessions(query, limit) -> SearchHit[]`:
+
+  ```ts
+  type SearchHit = {
+    sessionId: string; project: string | null; title: string;   // title from sessions_list data
+    ts: number; role: "user" | "assistant";
+    snippet: string;            // 160 chars around the first match, match marked with \u0001 and \u0002
+    hits: number;               // matches in this session
+    transcriptPath: string;
+  };
+  ```
+
+  Case-insensitive substring search over the record text; terms separated by
+  spaces must all occur in the record (AND); a term in double quotes is matched
+  literally with its spaces. Files are scanned on `std::thread::available_parallelism`
+  threads. One hit per session (the latest matching record), sessions ordered
+  by latest hit; `limit` default 50. Returns within 300 ms on the author's index.
+- Tests: extraction from fixture lines (user string, user parts, assistant
+  text vs thinking vs tool_use, attachment skipped, isSidechain skipped),
+  incremental refresh (unchanged file untouched, grown file re-extracted,
+  deleted file dropped), snippet marking, AND and quoted terms, ordering.
+
+### Front end
+
+- Sessions panel: the existing search box searches titles as today for one or
+  two characters; from three characters on it also queries `search_sessions`
+  (debounced 250 ms) and shows a "Transcripts" section under the title matches:
+  one row per session with the title, project label, relative time of the hit,
+  the snippet with the match highlighted in the accent colour, and the hit
+  count. Enter or click on a row resumes that session into a tab (same action
+  as Resume; "Already running, open in tab X" when live). A small status line
+  shows "Index: N sessions, as of <relative time>" with a Refresh button, and
+  "Indexing..." while a refresh runs.
+- Command palette: when the query has three characters or more and the palette
+  shows fewer than 5 rows, a last group "Transcripts" with up to 5
+  `search_sessions` hits ("Resume <title>", hint = snippet start) appears after
+  the others (debounced, cancelled when the query changes).
+- `src/lib/ipc.ts`: `search.refresh()`, `search.query(a)`, `SearchHit`, `IndexStatus`.
+- Dev driver: `t.search.{query, refresh}`.
+
+### Docs
+
+README Sessions/Panels line, CHANGELOG under Unreleased.

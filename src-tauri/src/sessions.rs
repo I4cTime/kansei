@@ -33,13 +33,13 @@ pub struct LiveInfo {
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Session {
-    id: String,
-    project: Option<String>,
-    title: String,
+    pub(crate) id: String,
+    pub(crate) project: Option<String>,
+    pub(crate) title: String,
     first_ts: Option<i64>,
     last_ts: i64,
     prompts: u32,
-    transcript_path: Option<String>,
+    pub(crate) transcript_path: Option<String>,
     transcript_bytes: u64,
     live: Option<LiveInfo>,
 }
@@ -103,7 +103,7 @@ struct Live {
 }
 
 /// `8-4-4-4-12` hex with hyphens.
-fn looks_like_uuid(s: &str) -> bool {
+pub(crate) fn looks_like_uuid(s: &str) -> bool {
     s.len() == 36
         && s.char_indices().all(|(i, c)| match i {
             8 | 13 | 18 | 23 => c == '-',
@@ -327,19 +327,21 @@ pub fn collect(
     out
 }
 
+/// `collect` over the real `~/.claude` roots (also used by session search for titles).
+pub fn list_all() -> Result<Vec<Session>, String> {
+    let claude = claude_dir()?;
+    Ok(collect(
+        &claude.join("history.jsonl"),
+        &claude.join("sessions"),
+        &claude.join("projects"),
+        &pid_is_running,
+        &|enc| decode_project_path(enc).map(|p| p.to_string_lossy().into_owned()),
+    ))
+}
+
 #[tauri::command]
 pub async fn sessions_list() -> Result<Vec<Session>, String> {
-    blocking(|| {
-        let claude = claude_dir()?;
-        Ok(collect(
-            &claude.join("history.jsonl"),
-            &claude.join("sessions"),
-            &claude.join("projects"),
-            &pid_is_running,
-            &|enc| decode_project_path(enc).map(|p| p.to_string_lossy().into_owned()),
-        ))
-    })
-    .await
+    blocking(list_all).await
 }
 
 #[cfg(test)]
