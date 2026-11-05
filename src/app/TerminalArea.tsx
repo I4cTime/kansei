@@ -110,14 +110,27 @@ function Divider({ ratio, area }: { ratio: number; area: RefObject<HTMLDivElemen
       style={{ left: `calc(${ratio * 100}% - ${DIVIDER / 2}px)`, width: DIVIDER }}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
-        e.preventDefault();
-        e.currentTarget.setPointerCapture(e.pointerId);
-      }}
-      onPointerMove={(e) => {
-        if (e.currentTarget.hasPointerCapture(e.pointerId)) resize(e.clientX);
-      }}
-      onPointerUp={(e) => {
-        if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+        e.preventDefault(); // no text selection in the terminals while dragging
+        const el = e.currentTarget;
+        const id = e.pointerId;
+        try {
+          el.setPointerCapture(id);
+        } catch {
+          // The window listeners below follow the pointer anyway.
+        }
+        const move = (ev: PointerEvent) => {
+          if (ev.pointerId === id) resize(ev.clientX);
+        };
+        const up = (ev: PointerEvent) => {
+          if (ev.pointerId !== id) return;
+          window.removeEventListener("pointermove", move, true);
+          window.removeEventListener("pointerup", up, true);
+          window.removeEventListener("pointercancel", up, true);
+          if (el.hasPointerCapture(id)) el.releasePointerCapture(id);
+        };
+        window.addEventListener("pointermove", move, true);
+        window.addEventListener("pointerup", up, true);
+        window.addEventListener("pointercancel", up, true);
       }}
       onDoubleClick={() => setRatio(DEFAULT_RATIO)}
     >
