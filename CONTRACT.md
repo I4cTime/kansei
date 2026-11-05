@@ -2073,8 +2073,11 @@ comment for `memoryView`.
   with k = sqrt(1/n)), gravity 4 and project pull 0.6 per unit distance,
   steps capped by a temperature cooling linearly from 0.08; then scaled
   uniformly into the box with a 2 % margin and centred. Nodes are placed in
-  id order, so the result does not depend on the input order. About 25 ms
-  for the real graph in the dev webview, 38 ms for 300 nodes under Node.
+  id order, so the result does not depend on the input order. 22 to 27 ms
+  for the real graph in the dev webview; for 300 nodes under Node about 23 ms
+  once the JIT is warm (47 ms cold). The timing test warms up with a 20
+  iteration run and takes the best of two full runs (a shared CI runner is
+  about three times slower than the author's machine).
   `layoutCached(graph, seed = 1)` keeps the last four results by
   `graphHash` (FNV-1a over sorted node ids with their projects, and sorted
   edges) and records `ms`, shown as the legend's title.

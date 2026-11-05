@@ -92,6 +92,8 @@ export function layout(graph: Pick<MemoryGraph, "nodes" | "edges">, seed: number
     for (let i = 0; i < n; i++) {
       const xi = x[i];
       const yi = y[i];
+      let fx = 0;
+      let fy = 0;
       for (let j = i + 1; j < n; j++) {
         let ddx = xi - x[j];
         let ddy = yi - y[j];
@@ -103,11 +105,15 @@ export function layout(graph: Pick<MemoryGraph, "nodes" | "edges">, seed: number
           d2 = ddx * ddx + ddy * ddy;
         }
         const f = k2 / d2;
-        dx[i] += ddx * f;
-        dy[i] += ddy * f;
-        dx[j] -= ddx * f;
-        dy[j] -= ddy * f;
+        const px = ddx * f;
+        const py = ddy * f;
+        fx += px;
+        fy += py;
+        dx[j] -= px;
+        dy[j] -= py;
       }
+      dx[i] += fx;
+      dy[i] += fy;
     }
 
     // Springs d^2 / k along edges.
