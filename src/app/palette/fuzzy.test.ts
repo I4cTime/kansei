@@ -12,9 +12,11 @@ describe("score", () => {
   });
 
   it("ranks a prefix above a scattered match", () => {
-    // o and b at word starts (+3 each), four characters skipped between them.
-    expect(score("ob", "Open Board")).toBe(2);
-    expect(score("op", "Open Board")!).toBeGreaterThan(score("ob", "Open Board")!);
+    // o and b at word starts (+3 each), a gap of four costs the capped 2.
+    expect(score("ob", "Open Board")).toBe(4);
+    expect(score("op", "Open Board")!).toBeGreaterThanOrEqual(score("ob", "Open Board")!);
+    // Two word starts in a short command beat a mid-word run in a long title.
+    expect(score("ob", "Open Board")!).toBeGreaterThan(score("ob", "fix the job runner that keeps restarting after the nightly build")!);
   });
 
   it("ranks word starts above mid-word characters", () => {

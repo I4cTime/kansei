@@ -1350,7 +1350,8 @@ the atoms' values as arguments (so tests feed fixtures):
 `src/app/palette/fuzzy.ts`: `score(query, text): number | null` is a
 case-insensitive subsequence match over `title` then each keyword, taking the
 best. Score = 100 for an exact prefix, otherwise per matched character: +3 at a
-word start, +2 adjacent to the previous match, +1 elsewhere, minus the gap count;
+word start, +2 adjacent to the previous match, +1 elsewhere, minus the length of each gap (a
+run of skipped characters) capped at 2;
 null when a query character is missing. Results sort by score desc, then group
 order (Tabs, Panels, Projects, Sessions, Board, Themes), then title. At most 40
 rows. The empty query lists recent commands first (ids in `prefs.paletteRecent`,
@@ -1385,8 +1386,9 @@ comment for `paletteRecent`.
 
 ### As implemented (2026-11-04)
 
-- Gap count = characters skipped between two matched characters (none before
-  the first). The best placement is found by a small DP, so a later word start
+- A gap is a run of skipped characters between two matched characters and
+  costs its length capped at 2 (changed 2026-11-04 from the uncapped length,
+  which let long session titles outscore short commands). The best placement is found by a small DP, so a later word start
   can beat an earlier mid-word hit. Word starts include camelCase humps.
 - The 40-row cap applies to a typed query; the empty query lists recent (at
   most 8), Tabs and Panels complete and the other groups at 6 each, uncapped,

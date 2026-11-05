@@ -4,8 +4,10 @@
 // score(query, text): a case-insensitive subsequence match. 100 when `text`
 // starts with `query`; otherwise the best placement of the query's characters,
 // each worth +3 at a word start, +2 right after the previous matched
-// character, +1 elsewhere, minus the gap count (characters skipped between two
-// matched characters). null when a query character is missing.
+// character, +1 elsewhere, minus the gap length capped at 2 (a gap is the run
+// of skipped characters between two matched characters; the cap keeps a
+// scattered match in a long session title from outscoring two word starts in
+// a short command). null when a query character is missing.
 import type { Command, CommandGroup } from "./commands";
 import { PALETTE_RECENT_MAX } from "../prefs";
 
@@ -47,14 +49,16 @@ export function score(query: string, text: string): number | null {
   for (let j = 0; j < n; j++) if (t[j] === q[0]) prev[j] = ws[j] ? 3 : 1;
   for (let i = 1; i < m; i++) {
     const cur = new Array<number>(n).fill(NONE);
-    // best of prev[k] + k over k < j - 1 (a gap of j - k - 1 characters).
+    // farBest: best of prev[k] over k <= j - 3 (a gap of two or more, penalty 2);
+    // prev[j - 2] is a gap of one (penalty 1).
     let farBest = NONE;
     for (let j = 1; j < n; j++) {
-      if (j >= 2 && prev[j - 2] !== NONE) farBest = Math.max(farBest, prev[j - 2] + (j - 2));
+      if (j >= 3 && prev[j - 3] !== NONE) farBest = Math.max(farBest, prev[j - 3]);
       if (t[j] !== q[i]) continue;
       let best = NONE;
       if (prev[j - 1] !== NONE) best = prev[j - 1] + (ws[j] ? 3 : 2);
-      if (farBest !== NONE) best = Math.max(best, farBest - (j - 1) + (ws[j] ? 3 : 1));
+      if (j >= 2 && prev[j - 2] !== NONE) best = Math.max(best, prev[j - 2] - 1 + (ws[j] ? 3 : 1));
+      if (farBest !== NONE) best = Math.max(best, farBest - 2 + (ws[j] ? 3 : 1));
       cur[j] = best;
     }
     prev = cur;
