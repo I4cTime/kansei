@@ -13,6 +13,13 @@ describe("shortcuts", () => {
     expect(matchShortcut(key("KeyH", { ctrlKey: true }))).toBeNull();
   });
 
+  it("maps Ctrl+Shift+P to the palette and leaves Ctrl+K to the terminal", () => {
+    expect(matchShortcut(key("KeyP"))).toEqual({ type: "palette" });
+    expect(matchShortcut(key("KeyP", { ctrlKey: true }))).toBeNull();
+    expect(matchShortcut(key("KeyK", { ctrlKey: true, key: "k" }))).toBeNull();
+    expect(matchShortcut(key("KeyK"))).toBeNull();
+  });
+
   it("labels the nav hints", () => {
     expect(panelShortcut("board", 1)).toBe("Ctrl+Shift+2");
     expect(panelShortcut("workflows", 9)).toBe("Ctrl+Shift+0");

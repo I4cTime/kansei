@@ -32,6 +32,8 @@
 //   notifyWaiting:    boolean              desktop notification when a tab that is hidden (or the window
 //                                          unfocused) starts waiting: a permission prompt, a question, or
 //                                          a finished turn (default true)
+//   paletteRecent:    string[]             command palette ids run last, newest first (at most 8; the
+//                                          empty query lists them first, see src/app/palette)
 //
 // Usage from a panel:
 //   const prefs = useAtomValue(prefsAtom);
@@ -68,6 +70,7 @@ export type Prefs = {
   board: BoardConfig | null;
   contextWindow: number;
   notifyWaiting: boolean;
+  paletteRecent: string[];
 };
 
 export const CONTEXT_WINDOW_MIN = 50_000;
@@ -77,6 +80,8 @@ export const SIDEBAR_DEFAULT = 300;
 export const SIDEBAR_MIN = 220;
 export const SIDEBAR_MAX = 520;
 export const SIDEBAR_RAIL = 44;
+/** Most ids prefs.paletteRecent keeps. */
+export const PALETTE_RECENT_MAX = 8;
 
 export const DEFAULT_PREFS: Prefs = {
   newTabCommand: "claude",
@@ -98,6 +103,7 @@ export const DEFAULT_PREFS: Prefs = {
   board: null,
   contextWindow: 200_000,
   notifyWaiting: true,
+  paletteRecent: [],
 };
 
 export const prefsAtom = atom<Prefs>(DEFAULT_PREFS);
@@ -184,6 +190,7 @@ export function sanitizePrefs(raw: unknown): Prefs {
         ? Math.round(Math.min(CONTEXT_WINDOW_MAX, Math.max(CONTEXT_WINDOW_MIN, r.contextWindow)))
         : d.contextWindow,
     notifyWaiting: typeof r.notifyWaiting === "boolean" ? r.notifyWaiting : d.notifyWaiting,
+    paletteRecent: stringList(r.paletteRecent, d.paletteRecent).slice(0, PALETTE_RECENT_MAX),
   };
 }
 

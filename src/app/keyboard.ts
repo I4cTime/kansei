@@ -5,6 +5,7 @@ import { prefsAtom, setPrefs } from "./prefs";
 import { matchShortcut, type ShortcutAction } from "./shortcuts";
 import { store } from "./store";
 import { closeActiveTab, cycleTab, newTabWithPicker } from "./tabs";
+import { togglePalette } from "./palette";
 
 function run(a: ShortcutAction) {
   switch (a.type) {
@@ -31,6 +32,9 @@ function run(a: ShortcutAction) {
     case "panel":
       if (PANELS.some((p) => p.id === a.id)) setPrefs({ sidebarSection: a.id, sidebarCollapsed: false });
       return;
+    case "palette":
+      togglePalette();
+      return;
   }
 }
 
@@ -55,7 +59,7 @@ export function installShortcuts(): () => void {
     if (!action) return;
     e.preventDefault();
     e.stopPropagation();
-    if (e.repeat && (action.type === "newTab" || action.type === "closeTab")) return;
+    if (e.repeat && (action.type === "newTab" || action.type === "closeTab" || action.type === "palette")) return;
     run(action);
   };
   window.addEventListener("keydown", onKey, true);

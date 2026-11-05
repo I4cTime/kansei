@@ -13,6 +13,12 @@ export { absoluteTime, formatSize, plural, relativeTime } from "../shared/format
  */
 export const sessionsProjectFilterAtom = atom<string | null>(null);
 
+/**
+ * The Sessions panel's last loaded list while it is mounted (null otherwise);
+ * the command palette reuses it instead of fetching again.
+ */
+export const sessionsListAtom = atom<Session[] | null>(null);
+
 /** Select value for sessions whose project is unknown. */
 export const NO_PROJECT = "\u0000none";
 

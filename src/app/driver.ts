@@ -22,6 +22,8 @@ import * as boardModel from "../panels/board/model";
 import * as boardActions from "../panels/board/actions";
 import * as calendarModel from "../panels/calendar/model";
 import * as calendarActions from "../panels/calendar/actions";
+import { closePalette, commandsNow, openPalette } from "./palette";
+import { rank, score } from "./palette/fuzzy";
 
 declare global {
   interface Window {
@@ -63,6 +65,11 @@ export function installDriver() {
     workspaces,
     workspaceModel,
     terminals,
+    /**
+     * Command palette: open / close it, every command right now (buildCommands(), live store; run() not
+     * serializable), the fuzzy score and the ranking (rank(commands, query, recent)).
+     */
+    palette: { openPalette, closePalette, buildCommands: commandsNow, score, rank },
     /** Tab status and context: activityAtom (per pty pid, after the idle-after-busy rule) and tabActivity(tab). */
     activity: { activityAtom, tabActivity },
     /** querySelector that throws a readable error when nothing matches. */

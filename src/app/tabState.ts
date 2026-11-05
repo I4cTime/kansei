@@ -28,6 +28,8 @@ export const activeTabAtom = atom((get) => {
   const key = get(activeKeyAtom);
   return get(tabsAtom).find((t) => t.key === key) ?? null;
 });
+/** A tab key whose rail item should enter rename mode (the palette's Rename tab); the item clears it. */
+export const renameRequestAtom = atom<string | null>(null);
 /** True once tabs.json has been restored; persistence starts after that. */
 export const tabsRestoredAtom = atom(false);
 

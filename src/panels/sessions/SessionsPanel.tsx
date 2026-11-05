@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Play, Trash } from "lucide-react";
 import { files, pty, sessions, type Session } from "../../lib/ipc";
 import { CLAUDE, activateTab, openTab, tabsAtom } from "../../app/tabs";
@@ -16,6 +16,7 @@ import {
   projectLabel,
   projectOptions,
   relativeTime,
+  sessionsListAtom,
   sessionsProjectFilterAtom,
   type SessionGroup,
 } from "./model";
@@ -34,6 +35,7 @@ function useSessions() {
   const [loading, setLoading] = useState(false);
   const seq = useRef(0);
   const failing = useRef(false);
+  const shareList = useSetAtom(sessionsListAtom);
 
   const load = useCallback(
     async (silent: boolean) => {
@@ -43,7 +45,10 @@ function useSessions() {
         const [list, ptys, paths] = await Promise.all([sessions.list(), pty.list(), getPaths()]);
         const ptyPids = new Map<string, number>();
         for (const p of ptys) if (p.alive && typeof p.pid === "number") ptyPids.set(p.id, p.pid);
-        if (my === seq.current) setData({ list, ptyPids, home: paths.home });
+        if (my === seq.current) {
+          setData({ list, ptyPids, home: paths.home });
+          shareList(list);
+        }
         failing.current = false;
       } catch (e) {
         if (my === seq.current && (!silent || !failing.current)) toast.error(e, "Could not list sessions");
@@ -52,8 +57,11 @@ function useSessions() {
         if (my === seq.current) setLoading(false);
       }
     },
-    [toast],
+    [toast, shareList],
   );
+
+  // The palette reuses the list only while this panel keeps it fresh.
+  useEffect(() => () => shareList(null), [shareList]);
 
   useEffect(() => {
     void load(false);
