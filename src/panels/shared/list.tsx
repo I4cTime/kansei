@@ -39,8 +39,11 @@ export function Row({
   clamp = 1,
   mono,
   extra,
+  lead,
 }: {
   title: ReactNode;
+  /** Before the title on the first line (a status dot). */
+  lead?: ReactNode;
   subtitle?: ReactNode;
   /** Wrapping line under the subtitle (chips). */
   extra?: ReactNode;
@@ -72,6 +75,7 @@ export function Row({
     >
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5">
+          {lead}
           <span className={cx("min-w-0 truncate text-[13px] text-fg", mono && "font-mono text-xs")}>{title}</span>
           {badge}
         </div>

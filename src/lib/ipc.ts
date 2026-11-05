@@ -283,6 +283,35 @@ export const mcp = {
   extras: () => invoke<McpExtras>("mcp_extras"),
 };
 
+/** One probe result (CONTRACT.md "MCP health"). */
+export type McpHealthStatus = "ok" | "auth" | "failed" | "timeout" | "skipped";
+export type McpHealth = {
+  /** "<scope>|<project or ''>|<name>". */
+  key: string;
+  status: McpHealthStatus;
+  /** stderr tail (last 2 KB), HTTP status, spawn error, or why it was skipped. */
+  detail: string | null;
+  /** Handshake latency; null when nothing ran. */
+  ms: number | null;
+  /** From the initialize result (stdio servers). */
+  serverInfo: { name: string; version: string | null } | null;
+  /** Epoch ms. */
+  checkedAt: number;
+};
+/**
+ * What to probe: an McpServer, a plugin server (scope "plugin", project "<plugin>@<marketplace>") or a claude.ai
+ * connector (scope "connector", always skipped).
+ */
+export type McpHealthTarget = { scope: string; project?: string; name: string; config: Record<string, unknown> };
+
+export const mcpHealth = {
+  /** Probes three at a time (8 s timeout each); every result also fires mcp:health. Merged into mcp-health.json. */
+  check: (servers: McpHealthTarget[]) => invoke<McpHealth[]>("mcp_health_check", { servers }),
+  /** <appData>/mcp-health.json, every key ever checked. */
+  cached: () => invoke<McpHealth[]>("mcp_health_cached"),
+  onResult: (cb: (h: McpHealth) => void): Promise<UnlistenFn> => listen<McpHealth>("mcp:health", (ev) => cb(ev.payload)),
+};
+
 export const board = {
   /** `gh auth status` (gh runs without GITHUB_TOKEN). */
   ghStatus: () => invoke<GhStatus>("gh_status"),
