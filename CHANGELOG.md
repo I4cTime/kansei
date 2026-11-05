@@ -8,6 +8,16 @@ releases yet; everything so far is on `main` as 0.1.x.
 
 ### Added
 
+- **Project accents** (2026-11-04). Every workspace project gets a stable
+  colour from the terminal palette: a 3 px left edge on each tab, the line
+  under the tab rail in the active tab's colour, the unfocused right pane's
+  top line in its own colour, and a chip with the active tab's project name
+  next to the brand in the sidebar header. Projects tree rows show it as a
+  dot and the Edit sheet picks it (Auto, from a hash of the path, or one of
+  six names; saved in workspaces.json). The Calendar's activity dots use the
+  same colours (unchanged for every path left on Auto). Settings, Appearance,
+  "Project accents" turns the tinting off.
+
 - **Split terminal** (2026-11-04). Two tabs side by side: Ctrl+Shift+\\, a
   tab's right click menu ("Open on the right"), dragging a tab onto the right
   half of the terminal area, or "Split with <tab>" in the palette. The left

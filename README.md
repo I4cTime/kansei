@@ -221,6 +221,18 @@ resize (30 to 70 %), double click it for half and half. The right tab shows a
 columns icon in the rail, the focused pane an accent line on top, and the
 split is kept in tabs.json across restarts.
 
+**Project accents**: every workspace project has a colour from the terminal
+palette (red, yellow, green, cyan, blue, magenta), picked from a hash of its
+path or set in the Projects panel's Edit sheet (Accent: Auto or one of the
+six). Each tab shows its project's colour as a thin left edge, the line under
+the tab rail takes the active tab's colour, an unfocused right pane shows its
+own colour on top, and a chip right of the "kansei" label in the sidebar
+header names the active tab's project. A tab whose folder is in no workspace
+project uses its folder's colour and name. Projects tree rows show the colour
+as a dot, and the Calendar's activity dots use the same colours. Turn it off
+in Settings, This app, Appearance, "Project accents" (`projectAccents` in
+prefs.json); the Calendar dots keep their colours.
+
 The MCPs panel also lists, read only, the servers Claude Code loads from
 installed plugins (`~/.claude/plugins`), the claude.ai connectors and the
 built-in Chrome server, below the editable ones.
@@ -237,7 +249,7 @@ wrapper folders like `products/mineui`) and monorepo apps and packages as
 subprojects. Each can be opened as its own Claude project, opened with related
 projects (`claude --add-dir ...`), described (Edit) and linked (Related...).
 
-Descriptions, status and relations live in `<appData>/workspaces.json`. From
+Descriptions, status, relations and accents live in `<appData>/workspaces.json`. From
 them Kansei keeps `<root>/PROJECTS.md` up to date (it is overwritten; edit in
 the panel) and, the first time it sees a root, creates `<root>/CLAUDE.md`
 importing `@PROJECTS.md` (or appends the import once to an existing one), so

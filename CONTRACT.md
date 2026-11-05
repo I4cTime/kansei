@@ -499,7 +499,8 @@ the file is left alone.
 ### Registry (front end, `src/panels/projects/workspaceStore.ts` + `workspace.ts`)
 
 - `<appData>/workspaces.json`:
-  `{ "<root>": { "<absolute project path>": { "description": string, "status": "idea"|"active"|"live"|"parked"|"archived"|null, "related": string[] } } }`,
+  `{ "<root>": { "<absolute project path>": { "description": string, "status": "idea"|"active"|"live"|"parked"|"archived"|null, "related": string[], "accent": "red"|"yellow"|"green"|"cyan"|"blue"|"magenta"|null } } }`
+  (`accent` added 2026-11-04, see "Project accents"; null or missing = automatic, an unknown name reads as null),
   read and written with `fs_read_text` / `fs_write_text`. Entries that become
   empty are removed. If the file cannot be parsed, nothing is written over it
   (edits fail with an error until it is fixed).
@@ -570,8 +571,9 @@ Row actions (hover or focus): Open, Shell, Open with..., Resume last, Sessions,
 Related..., Edit, Pin / Unpin, Hide / Unhide. Related and Edit are disabled for
 folders outside every workspace root.
 
-- Edit: sheet with a description textarea (Ctrl+Enter saves) and a status
-  select; saving updates the registry and PROJECTS.md.
+- Edit: sheet with a description textarea (Ctrl+Enter saves), a status
+  select and an Accent row (see "Project accents"); saving updates the
+  registry and PROJECTS.md.
 - Related...: sheet listing every project and subproject of the trees except
   this one (search, checkboxes, current relations checked). Save calls
   `project_additional_dirs` with `managed` = every workspace project path plus
@@ -1828,3 +1830,32 @@ set (snapshot of three known paths).
 
 README Run or Panels (one paragraph), CHANGELOG under Unreleased, prefs.ts
 doc comment, CONTRACT Workspaces registry shape gets `accent`.
+
+### As implemented (2026-11-04)
+
+- Modules: `accents.ts` is pure (type imports only, so `workspace.ts` can
+  sanitise `accent` with it); it also exports `hashAccent`, `isAccentName`,
+  `tabAccent(cwd, tree, registry)` (project path, name, accent) and
+  `chipName`. The live atoms are in `src/app/accentState.ts`: `accentOfAtom`
+  (cwd -> `TabAccent` from `treeAtom` and `registryAtom`), `accentsOnAtom`
+  (the pref) and `activeAccentAtom` (the active tab's, null with no active
+  tab or the pref off). The old `projectColour` is gone; the Calendar calls
+  `accentVar(accentFor(path, registry))`, so an Accent set in the Edit sheet
+  colours its dots too, and the hash runs on the path exactly as given (the
+  registry lookup ignores a trailing slash).
+- Terminal column: the tab rail lost its 1 px bottom border and is 32 px
+  high; the terminal area always has a 2 px top border, so rail plus line
+  stay 34 px and meet the sidebar header's bottom border. The line is the
+  active tab's accent, or `var(--border)` with no tab or the pref off, so
+  turning accents on or off never moves anything.
+- Pref off: no tab edges, the neutral line, no header chip, no Projects tree
+  dots, an unfocused right pane's top border transparent as before. The Edit
+  sheet's Accent row and the Calendar dots stay.
+- Projects dots: on every row backed by a workspace tree project (Tree,
+  Pinned, Recent and All views alike).
+- Chip: names longer than 18 characters are cut to 15 plus "..." (the
+  ellipsis style used elsewhere in the app).
+- Edit sheet: the Accent row is a radio group of seven buttons; Auto's
+  swatch shows the hashed colour (dimmed).
+- Dev driver: `t.accents` also has `accentVar`, `tabAccent`, `accentOfAtom`
+  and `activeAccentAtom`.
