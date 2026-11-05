@@ -8,6 +8,8 @@ import { formatTokens, inputTokens, usageDaysAtom } from "../panels/calendar/usa
 import { SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_RAIL, clampSidebar, prefsAtom, setPrefs } from "./prefs";
 import { panelShortcut } from "./shortcuts";
 import { IconButton } from "./ui";
+import { accentVar, chipName } from "./accents";
+import { activeAccentAtom } from "./accentState";
 
 /**
  * One line above the nav: today's area, how many tasks are scheduled (the
@@ -35,6 +37,25 @@ function TodayStrip() {
       <CalendarDays size={13} strokeWidth={1.75} className={plan.area ? "shrink-0 text-accent" : "shrink-0"} />
       <span className="min-w-0 truncate">{text}</span>
     </button>
+  );
+}
+
+/**
+ * Right of the brand label: the active tab's project, a 7 px dot in its accent
+ * and the name (title = full path). Nothing with no active tab or the pref off.
+ */
+function AccentChip() {
+  const a = useAtomValue(activeAccentAtom);
+  if (!a) return null;
+  return (
+    <span
+      data-accent-chip={a.accent}
+      title={a.path}
+      className="flex h-5 min-w-0 items-center gap-1.5 rounded-full border border-border px-2 text-[11px] text-fg-muted"
+    >
+      <span className="h-[7px] w-[7px] shrink-0 rounded-full" style={{ background: accentVar(a.accent) }} />
+      <span className="min-w-0 truncate">{chipName(a.name)}</span>
+    </span>
   );
 }
 
@@ -79,7 +100,14 @@ export function Sidebar() {
       <div
         className={`flex h-[34px] shrink-0 items-center border-b border-border ${collapsed ? "justify-center" : "justify-between pl-3 pr-1"}`}
       >
-        {!collapsed && <span data-brand className="text-xs font-semibold tracking-wide text-fg-muted">kansei</span>}
+        {!collapsed && (
+          <div className="flex min-w-0 items-center gap-2">
+            <span data-brand className="shrink-0 text-xs font-semibold tracking-wide text-fg-muted">
+              kansei
+            </span>
+            <AccentChip />
+          </div>
+        )}
         <IconButton
           icon={collapsed ? PanelLeftOpen : PanelLeftClose}
           label={collapsed ? "Expand sidebar (Ctrl+Shift+B)" : "Collapse sidebar (Ctrl+Shift+B)"}

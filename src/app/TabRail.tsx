@@ -5,6 +5,8 @@ import { activateTab, activeKeyAtom, closeTab, newTabWithPicker, renameRequestAt
 import { activityAtom, dotFor, gaugeFor, isExtended, tabActivity, type DotLook } from "./activity";
 import { prefsAtom } from "./prefs";
 import { draggedTabAtom, effectiveRight, splitAtom, splitWith, unsplit } from "./split";
+import { accentVar } from "./accents";
+import { accentOfAtom, accentsOnAtom } from "./accentState";
 import { store } from "./store";
 import { IconButton } from "./ui";
 
@@ -25,8 +27,10 @@ export function TabRail() {
     el?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeKey, tabs.length]);
 
+  // 32 px plus the terminal area's 2 px top border (the rail's bottom edge, in the
+  // active tab's accent) line up with the sidebar header's 34 px.
   return (
-    <div className="flex h-[34px] shrink-0 items-stretch border-b border-border bg-bg-sunken">
+    <div data-tab-rail className="flex h-[32px] shrink-0 items-stretch bg-bg-sunken">
       <div
         ref={scroller}
         role="tablist"
@@ -134,12 +138,17 @@ function TabItem({ tab, active, right, onMenu }: { tab: Tab; active: boolean; ri
   const contextWindow = useAtomValue(prefsAtom).contextWindow;
   const dot = dotFor(tab, act);
   const gauge = gaugeFor(act, contextWindow, act ? isExtended(act.sessionId) : false);
+  // Project accent: a 3 px inner left edge (box-shadow, so no layout change).
+  const accent = useAtomValue(accentOfAtom)(tab.cwd);
+  const accentsOn = useAtomValue(accentsOnAtom);
 
   return (
     <div
       role="tab"
       aria-selected={active}
       data-tab-key={tab.key}
+      data-tab-accent={accentsOn ? accent.accent : undefined}
+      style={accentsOn ? { boxShadow: `inset 3px 0 0 ${accentVar(accent.accent)}` } : undefined}
       title={`${tab.cwd}\n${[tab.command, ...tab.args].join(" ")}`}
       onMouseDown={(e) => {
         if (e.button === 1) e.preventDefault(); // no autoscroll on middle click

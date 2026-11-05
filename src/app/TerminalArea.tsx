@@ -6,6 +6,8 @@ import { attachTerminal, fitTerminal, focusTerminal, scheduleFit } from "./termi
 import { DEFAULT_RATIO, draggedTabAtom, effectiveRight, focusedPaneAtom, setRatio, splitAtom, splitWith, type Pane } from "./split";
 import { store } from "./store";
 import { Button } from "./ui";
+import { accentVar } from "./accents";
+import { accentOfAtom, accentsOnAtom, activeAccentAtom } from "./accentState";
 
 /** Divider width in px; each pane gives up half of it. */
 const DIVIDER = 6;
@@ -17,6 +19,9 @@ export function TerminalArea() {
   const split = useAtomValue(splitAtom);
   const focusedPane = useAtomValue(focusedPaneAtom);
   const dragged = useAtomValue(draggedTabAtom);
+  const activeAccent = useAtomValue(activeAccentAtom);
+  const accentOf = useAtomValue(accentOfAtom);
+  const accentsOn = useAtomValue(accentsOnAtom);
   const area = useRef<HTMLDivElement>(null);
   /** While a rail tab is dragged over the area: "area", or "right" over the right half (the drop zone). */
   const [dropZone, setDropZone] = useState<null | "area" | "right">(null);
@@ -40,7 +45,10 @@ export function TerminalArea() {
       ref={area}
       data-terminal-area
       data-split={right ? "" : undefined}
+      data-accent={activeAccent?.accent}
       className="relative min-h-0 flex-1 bg-bg"
+      // The tab rail's bottom edge: 2 px in the active tab's accent, the border colour without one.
+      style={{ borderTop: `2px solid ${activeAccent ? accentVar(activeAccent.accent) : "var(--border)"}` }}
       onDragOver={(e) => {
         if (!store.get(draggedTabAtom) || !area.current) return;
         const r = area.current.getBoundingClientRect();
@@ -65,7 +73,9 @@ export function TerminalArea() {
     >
       {tabs.map((t) => {
         const pane: Pane | null = t.key === activeKey ? "left" : t.key === right ? "right" : null;
-        return <TerminalView key={t.key} tab={t} pane={pane} ratio={ratio} focused={ratio !== null && pane === focusedPane} />;
+        // The right pane's top border shows its project's accent while the left pane has focus.
+        const idle = pane === "right" && accentsOn ? accentVar(accentOf(t.cwd).accent) : "transparent";
+        return <TerminalView key={t.key} tab={t} pane={pane} ratio={ratio} focused={ratio !== null && pane === focusedPane} idleBorder={idle} />;
       })}
       {ratio !== null && <Divider ratio={ratio} area={area} />}
       {dropZone && (
@@ -140,17 +150,17 @@ function Divider({ ratio, area }: { ratio: number; area: RefObject<HTMLDivElemen
 }
 
 /** Where a terminal sits: unsplit exactly as before (the whole area), split in its pane. */
-function paneStyle(pane: Pane | null, ratio: number | null, focused: boolean): CSSProperties {
+function paneStyle(pane: Pane | null, ratio: number | null, focused: boolean, idleBorder: string): CSSProperties {
   if (!pane) return { display: "none" };
   if (ratio === null) return { display: "block" };
   const at = `${ratio * 100}%`;
   const half = `${DIVIDER / 2}px`;
   const box: CSSProperties =
     pane === "left" ? { display: "block", right: "auto", width: `calc(${at} - ${half})` } : { display: "block", left: `calc(${at} + ${half})` };
-  return { ...box, borderTop: `2px solid ${focused ? "var(--accent)" : "transparent"}` };
+  return { ...box, borderTop: `2px solid ${focused ? "var(--accent)" : idleBorder}` };
 }
 
-function TerminalView({ tab, pane, ratio, focused }: { tab: Tab; pane: Pane | null; ratio: number | null; focused: boolean }) {
+function TerminalView({ tab, pane, ratio, focused, idleBorder }: { tab: Tab; pane: Pane | null; ratio: number | null; focused: boolean; idleBorder: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const key = tab.key;
   const active = pane === "left";
@@ -183,7 +193,7 @@ function TerminalView({ tab, pane, ratio, focused }: { tab: Tab; pane: Pane | nu
     <div
       className="absolute inset-0"
       data-pane={ratio !== null && pane ? pane : undefined}
-      style={paneStyle(pane, ratio, focused)}
+      style={paneStyle(pane, ratio, focused, idleBorder)}
       onMouseDownCapture={notePane}
       onFocusCapture={notePane}
     >
