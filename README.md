@@ -152,7 +152,13 @@ shortcuts (see [Keyboard](#keyboard)).
   included) through a small index in the app data dir, with highlighted
   snippets; the command palette shows those hits too when few commands match.
 - **Memory**: the `CLAUDE.md` files and the per-project memory folders under
-  `~/.claude/projects`.
+  `~/.claude/projects`. The List / Graph switch in the header shows every
+  memory note of every folder as a node graph of the `[[links]]` between
+  them, coloured by project accent (home notes grey), with unresolved links
+  as short dashed stubs. Drag to pan, wheel to zoom, Fit to reset; hover for
+  the description and link counts, click to open the note, right click to
+  reveal it in the list or copy its `[[name]]`. The search box fades the
+  notes that do not match. Read only.
 - **Rules**: user and project `.claude/rules` files, with their path globs.
 - **MCPs**: MCP servers in `~/.claude.json` and `.mcp.json`, user and project
   scope, plus a read-only list of plugin, claude.ai and built-in servers. Each

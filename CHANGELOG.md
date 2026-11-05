@@ -8,6 +8,20 @@ releases yet; everything so far is on `main` as 0.1.x.
 
 ### Added
 
+- **Memory graph** (2026-11-04). The Memory panel's header gets a List /
+  Graph switch (kept in prefs as `memoryView`). The graph shows every note in
+  every `~/.claude/projects/*/memory` folder and the `[[links]]` between them
+  (matched by `name:`, then file name, case-insensitive, `[[name|label]]`
+  aliases too): circles sized by backlinks in the project's accent colour,
+  home notes grey, unresolved links as short dashed stubs, and a MEMORY.md
+  index node only when an index links notes in other folders. Drag pans,
+  the wheel zooms around the cursor (0.5x to 4x), names show from 1.2x or 3
+  backlinks; hover highlights a note's links and shows its description and
+  counts, click opens it in the editor, right click offers Open, Reveal in
+  list and Copy [[name]]. The search box fades non-matching notes to 25 %.
+  The layout is computed once per graph (about 25 ms for 217 notes) and the
+  view never writes files.
+
 - **MCP health** (2026-11-04). Every MCP server (user, the active project's,
   plugin servers) is probed with a real `initialize` handshake: stdio servers
   are started, sent one JSON-RPC line and stopped again (8 s at most, SIGTERM

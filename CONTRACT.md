@@ -2052,3 +2052,54 @@ memory_graph(): Promise<MemoryGraph>
 
 README Memory line under Panels, CHANGELOG under Unreleased, prefs.ts doc
 comment for `memoryView`.
+
+### As implemented (2026-11-04)
+
+- Rust: `build_graph(dirs)` is pure over `(memory dir, project)` pairs and
+  `graph_dirs(projects_dir, home)` turns `list_projects` into them; a dir
+  whose decoded path is the home dir gets `project: null`, and so does a dir
+  whose project folder no longer exists (its `guessedPath` is null too). Notes
+  are read in dir order (encoded name) and file name order, which is also the
+  "first match" order. `type` is null for any value other than the four
+  memory types. `bytes` is the file size. Self links are dropped, and
+  unresolved links are deduplicated per source case-insensitively (the first
+  spelling is kept). A `[[` inside the brackets starts a new link.
+- MEMORY.md: an index is a node (`name: "MEMORY.md"`, title its H1) only when
+  it has something to draw: a link to a note in another dir (an edge) or an
+  unresolved link. An index is never a link target. On the author's machine
+  no index uses `[[links]]`, so there are no index nodes; the 249 files are
+  217 notes plus 32 indexes, with 322 edges and 5 unresolved links.
+- Layout: forces as in Fruchterman-Reingold (repulsion k^2/d, springs d^2/k
+  with k = sqrt(1/n)), gravity 4 and project pull 0.6 per unit distance,
+  steps capped by a temperature cooling linearly from 0.08; then scaled
+  uniformly into the box with a 2 % margin and centred. Nodes are placed in
+  id order, so the result does not depend on the input order. About 25 ms
+  for the real graph in the dev webview, 38 ms for 300 nodes under Node.
+  `layoutCached(graph, seed = 1)` keeps the last four results by
+  `graphHash` (FNV-1a over sorted node ids with their projects, and sorted
+  edges) and records `ms`, shown as the legend's title.
+- View (`MemoryGraphView.tsx`): zoom 1 fits the 0..1 box as a square into
+  the drawing area with 20 px padding. Edges are one `<path>` (plus one for
+  faded edges), stubs one dashed `<path>`, all with non-scaling strokes;
+  circles are one memoised layer, so hover and selection only redraw a small
+  overlay (the focused nodes' edges in `--accent` and a ring) and pan and
+  zoom only rewrite the group's `transform` (labels keep a 10 px screen size
+  by rewriting the label group's `font-size`). Zoom is around the cursor by
+  `exp(-deltaY * 0.0015)`. With a filter, edges with an unmatched end and
+  stubs from unmatched notes fade too, and the legend adds "n match".
+- Panel: the switch is a two-button radio group (List, Graph) in the header
+  actions, left of Refresh; in the graph view the header has no "+", and the
+  project selector and MEMORY.md button are hidden (the graph spans every
+  dir). The search box always shows in the graph view and shares its query
+  with the list (the list also shows the box while a query is set). Refresh
+  reloads the graph too, and saving a note opened from the graph reloads it.
+  "Reveal in list" selects the note's project (as a manual pick), clears a
+  query that would hide the note, switches `memoryView` to "list", and the
+  row stays highlighted and scrolled into view until another row is clicked
+  or the project changes; it is disabled for an index node. The right click
+  menu is the new `src/panels/shared/ContextMenu.tsx` in the tab menu's style.
+- Dev driver: `t.memoryGraph` also has `layoutCached`, `graphHash` and
+  `loadingAtom`. DOM hooks: `[data-memory-graph]`, `circle[data-node-id]`
+  (`data-faded` when filtered out), `[data-graph-tooltip]`,
+  `[data-graph-legend]`, `[data-context-menu]`, `[data-memory-path]` on list
+  rows.
