@@ -211,6 +211,16 @@ Claude tabs run `~/.local/bin/claude` when that file is executable (a launcher
 that can load MCP credentials before starting claude), otherwise `claude` from
 PATH; set Settings, This app, "Claude command" to use something else.
 
+**Split**: two tabs side by side, to watch one agent while prompting another.
+Ctrl+Shift+\\ splits with the next tab in the rail (and unsplits), right click
+on a tab offers "Open on the right", and dragging a tab from the rail onto the
+right half of the terminal area does the same; the palette has "Split with
+<tab>" and "Close the right pane". The left pane is always the active tab;
+clicking the right tab in the rail swaps the two panes. Drag the divider to
+resize (30 to 70 %), double click it for half and half. The right tab shows a
+columns icon in the rail, the focused pane an accent line on top, and the
+split is kept in tabs.json across restarts.
+
 The MCPs panel also lists, read only, the servers Claude Code loads from
 installed plugins (`~/.claude/plugins`), the claude.ai connectors and the
 built-in Chrome server, below the editable ones.
@@ -389,7 +399,7 @@ Ctrl+Shift+B toggle sidebar, Ctrl+Shift+1..9 and 0 jump to the first ten
 sections in nav order (Projects, Board, Calendar, Sessions, Memory, Rules,
 MCPs, Agents, Skills, Workflows), Ctrl+Shift+H opens Hooks and Ctrl+Shift+,
 Settings, Ctrl+Shift+P toggles the command palette (see
-[Panels](#panels)), Esc closes the editor sheet, the palette and the
+[Panels](#panels)), Ctrl+Shift+\\ toggles the split terminal (see [Run](#run)), Esc closes the editor sheet, the palette and the
 Projects, Board and Calendar sheets, Ctrl+S saves in the editor, Ctrl+Enter saves the Edit sheet,
 Ctrl+Shift+C / V copy and paste in the terminal.
 

@@ -172,8 +172,9 @@ The files allowlist needed no change: `~/.claude/**` was already readable.
 
 ## Persistence (app data dir, `~/.local/share/kansei/`)
 
-- `tabs.json`: `{ version: 1, active: number, tabs: { title, cwd, command, args }[] }`
-  saved on every change, restored at launch (each restored tab re-spawns its
+- `tabs.json`: `{ version: 1, active: number, tabs: { title, cwd, command, args }[], split: { right: number | null, ratio } }`
+  (`split.right` is an index into `tabs`, see "Split terminal"; files without
+  `split` restore unsplit) saved on every change, restored at launch (each restored tab re-spawns its
   pty). Dead tabs (pty exited) show a "restart" affordance in the terminal area.
   A Claude tab stores `command: "claude"` (the logical command, never the
   resolved path); `spawnTab` maps it through the resolved Claude command at
@@ -1725,3 +1726,46 @@ the index form (restore with a missing or equal index yields no split).
 
 README Run section (a Split paragraph) and Keyboard; CONTRACT "Keyboard" and
 "Persistence" lines; CHANGELOG under Unreleased.
+
+### As implemented (2026-11-04)
+
+- Panes: no separate pane containers. Every `TerminalView` stays where it is
+  (one absolutely positioned box per tab, as unsplit) and the split only
+  changes its inline box: the left pane `left: 0; width: calc(ratio - 3px)`,
+  the right `left: calc(ratio + 3px); right: 0`, the divider between them,
+  everything else `display: none`. Same result as two containers, but a swap
+  or a split never remounts a view or moves an xterm host (no WebGL canvas
+  re-parenting), and the per-view `ResizeObserver` refits on every ratio
+  change. Unsplit, the view's style is exactly `{ display: block }` as before.
+- Activation: every change of the active tab in `tabs.ts` (`activateTab`,
+  `openTab`, `cycleTab`) goes through `setActiveKey` in `split.ts`, which
+  applies `swapIntoLeft`. `closeTab` on the active tab picks the next tab with
+  `nextActiveAfterClose` (as before, but skipping the right tab; when only the
+  right tab is left it becomes active and the split ends). `effectiveRight`
+  (an existing tab that is not active) is what the UI, the palette and
+  tabs.json use, so a stale `right` never shows.
+- `splitWith(activeKey)` ("Open on the right" on the active tab) moves the
+  active tab to the right and activates the current right tab or else the next
+  tab in rail order; with one tab it does nothing (the menu item is disabled).
+  `toggleSplit()` with one tab toasts "Open a second tab to split".
+- Focus: `focusedPaneAtom` ("left" | "right") is set by a capture-phase mouse
+  down or focus inside a pane; the focused pane gets a 2 px accent top border
+  (the other a transparent one, so both panes keep the same height). Activity
+  (`activity.ts`) treats the right tab as in view while its pane has focus and
+  the window has focus, and focusing it marks it seen. When the right pane
+  closes while focused, focus returns to the active terminal.
+- Divider: pointer down attaches window `pointermove` / `pointerup` listeners
+  (pointer capture is tried too), each move calls `setRatio`; drawn as a 1 px
+  line (accent on hover) in a 6 px hit area.
+- Drag: the rail item is `draggable` (not while renaming) and sets
+  `draggedTabAtom`; the terminal area shows the half-width drop zone while a
+  rail tab is over it (highlighted and accepting over the right half only).
+  On Linux wry's file-drop handler only claims drops with file URIs, so these
+  in-page drags reach the webview.
+- Rename from the context menu sets `renameRequestAtom` without activating the
+  tab (the palette's Rename tab still activates first).
+- `fitTerminal` now returns early when the xterm host has no size: WebKitGTK's
+  FitAddon proposed 11x5 inside a `display: none` container, which resized
+  every hidden tab's pty to 11x5 (pre-existing; more visible with the split
+  hiding and showing panes).
+- Dev driver: also `t.split.rightKey()` and `t.split.focusedPaneAtom`.
