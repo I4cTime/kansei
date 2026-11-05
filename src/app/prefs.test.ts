@@ -104,3 +104,20 @@ describe("sanitizePrefs memoryView", () => {
     expect(sanitizePrefs({ memoryView: true }).memoryView).toBe("list");
   });
 });
+
+describe("sanitizePrefs scratchpad", () => {
+  it("defaults to closed at 220 px", () => {
+    expect(sanitizePrefs({}).scratchOpen).toBe(false);
+    expect(sanitizePrefs({}).scratchHeight).toBe(220);
+  });
+
+  it("type-checks scratchOpen and keeps scratchHeight from 120 to 4000, rounded", () => {
+    expect(sanitizePrefs({ scratchOpen: true }).scratchOpen).toBe(true);
+    expect(sanitizePrefs({ scratchOpen: "yes" }).scratchOpen).toBe(false);
+    expect(sanitizePrefs({ scratchHeight: 333.6 }).scratchHeight).toBe(334);
+    expect(sanitizePrefs({ scratchHeight: 10 }).scratchHeight).toBe(120);
+    expect(sanitizePrefs({ scratchHeight: 99999 }).scratchHeight).toBe(4000);
+    expect(sanitizePrefs({ scratchHeight: "300" }).scratchHeight).toBe(220);
+    expect(sanitizePrefs({ scratchHeight: Number.POSITIVE_INFINITY }).scratchHeight).toBe(220);
+  });
+});
