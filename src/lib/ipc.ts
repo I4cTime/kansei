@@ -31,6 +31,26 @@ export type MemoryProject = {
   hasIndex: boolean; // MEMORY.md present
 };
 
+export type MemoryNoteType = "user" | "feedback" | "project" | "reference";
+
+/** The [[links]] between memory notes (CONTRACT.md "Memory graph"). */
+export type MemoryGraph = {
+  nodes: {
+    id: string; // absolute path of the note
+    name: string; // frontmatter `name:` when present, else the file stem ("MEMORY.md" for an index node)
+    title: string; // first H1 or the name
+    description: string | null;
+    type: MemoryNoteType | null; // frontmatter metadata.type (null for any other value)
+    project: string | null; // decoded project path of the memory dir (null for the home dir)
+    bytes: number;
+    links: number; // outgoing resolved
+    backlinks: number; // incoming
+  }[];
+  edges: { from: string; to: string }[]; // node ids, deduplicated
+  unresolved: { from: string; target: string }[]; // [[target]] with no note of that name
+};
+export type MemoryGraphNode = MemoryGraph["nodes"][number];
+
 /** "project" = projects.<path>.mcpServers in ~/.claude.json; "projectFile" = <root>/.mcp.json. */
 export type McpScope = "user" | "project" | "projectFile";
 export type McpServer = {
@@ -204,6 +224,8 @@ export const files = {
 
 export const memory = {
   projects: () => invoke<MemoryProject[]>("memory_projects"),
+  /** Every note in every memory dir and the [[links]] between them. Read only. */
+  graph: () => invoke<MemoryGraph>("memory_graph"),
 };
 
 export const sessions = {

@@ -52,6 +52,7 @@ pub fn run() {
             files::fs_mkdir,
             files::project_root,
             memory::memory_projects,
+            memory::memory_graph,
             mcp::mcp_list,
             mcp::mcp_upsert,
             mcp::mcp_remove,
