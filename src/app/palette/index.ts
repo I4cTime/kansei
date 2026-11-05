@@ -106,7 +106,8 @@ export function commandsNow(sessions: PaletteInput["sessions"] = null): Command[
 export function runCommand(c: Command) {
   if (c.disabled) return;
   closePalette();
-  setPrefs({ paletteRecent: pushRecent(store.get(prefsAtom).paletteRecent, c.id) });
+  // Transcript hits are search results, not commands to come back to.
+  if (c.group !== "Transcripts") setPrefs({ paletteRecent: pushRecent(store.get(prefsAtom).paletteRecent, c.id) });
   try {
     const r = c.run();
     if (r instanceof Promise) r.catch((e) => toastError(e, c.title));

@@ -2,7 +2,7 @@
 // builder per group: it takes the atoms' values and the actions to call, so
 // commands.test.ts feeds fixtures and fake actions. index.ts wires the real
 // actions; Palette.tsx reads the atoms.
-import type { BoardItem, BoardSnapshot, BoardStatus, Session, WorkspaceNode } from "../../lib/ipc";
+import type { BoardItem, BoardSnapshot, BoardStatus, SearchHit, Session, WorkspaceNode } from "../../lib/ipc";
 import type { Tab } from "../tabState";
 import type { ThemePref } from "../prefs";
 import { panelShortcut } from "../shortcuts";
@@ -10,10 +10,12 @@ import type { Preset } from "../theme/presets";
 import { tildify } from "../../panels/shared/paths";
 import { relativeTime } from "../../panels/shared/format";
 import { projectLabel } from "../../panels/sessions/model";
+import { snippetText } from "../../panels/sessions/search";
 import { entryOf, indexTree, type Registry, type TreeRef } from "../../panels/projects/workspace";
 import { isEpic, itemKey, laneOf, repoShort } from "../../panels/board/model";
 
-export type CommandGroup = "Tabs" | "Panels" | "Projects" | "Sessions" | "Board" | "Themes";
+/** "Transcripts" rows come from session search and are appended after the ranked rows (transcriptCommands). */
+export type CommandGroup = "Tabs" | "Panels" | "Projects" | "Sessions" | "Board" | "Themes" | "Transcripts";
 
 export type Command = {
   /** Stable: "tab:<key>", "panel:<id>", "project:<path>", ... (prefs.paletteRecent keeps these). */
@@ -174,6 +176,43 @@ export function sessionCommands(list: Session[] | null, now: number, home: strin
         run: () => act.resumeSession(s),
       };
     });
+}
+
+/** Transcript hits the palette shows at most. */
+export const TRANSCRIPT_ROWS = 5;
+/** The palette searches transcripts while a query of this length shows fewer than this many rows. */
+export const TRANSCRIPT_BELOW_ROWS = 5;
+/** Characters of the snippet shown as the hint. */
+const TRANSCRIPT_HINT_CHARS = 60;
+
+/**
+ * "Resume <title>" per transcript hit (hint: the snippet start), at most
+ * TRANSCRIPT_ROWS. A hit whose session is in `list` resumes that session (and
+ * is disabled while it runs); otherwise a session is made from the hit.
+ */
+export function transcriptCommands(hits: SearchHit[], list: Session[] | null, act: PaletteActions): Command[] {
+  const byId = new Map((list ?? []).map((s) => [s.id, s]));
+  return hits.slice(0, TRANSCRIPT_ROWS).map((h) => {
+    const s: Session = byId.get(h.sessionId) ?? {
+      id: h.sessionId,
+      project: h.project,
+      title: h.title,
+      firstTs: null,
+      lastTs: h.ts,
+      prompts: 0,
+      transcriptPath: h.transcriptPath,
+      transcriptBytes: 0,
+      live: null,
+    };
+    return {
+      id: `transcript:${h.sessionId}`,
+      group: "Transcripts" as const,
+      title: `Resume ${h.title}`,
+      hint: snippetText(h.snippet, TRANSCRIPT_HINT_CHARS),
+      disabled: s.live ? "Already running" : undefined,
+      run: () => act.resumeSession(s),
+    };
+  });
 }
 
 const MOVES: { from: BoardStatus; verb: string; to: BoardStatus }[] = [
