@@ -1977,3 +1977,78 @@ gets `<appData>/mcp-health.json`, prefs.ts doc comment.
   while anything is checking.
 - `Row` (shared/list.tsx) gained a `lead` slot for the dot. Dev driver also
   exposes `checkingAtom` and `failedCountAtom`, and `t.ipc.mcpHealth`.
+
+## Memory graph (added 2026-11-04)
+
+A node graph of the `[[links]]` between memory notes, in the Memory panel. Task
+kansei#15. On the author's machine: 34 memory dirs, 249 notes, 124 distinct
+link targets.
+
+### Rust (`src-tauri/src/memory.rs`, new command)
+
+```ts
+type MemoryGraph = {
+  nodes: {
+    id: string;              // absolute path of the note
+    name: string;            // frontmatter `name:` when present, else the file stem
+    title: string;           // first H1 or the name
+    description: string | null;   // frontmatter `description:`
+    type: "user" | "feedback" | "project" | "reference" | null;   // frontmatter metadata.type
+    project: string | null;  // decoded project path of the memory dir (null for the home dir)
+    bytes: number;
+    links: number;           // outgoing resolved
+    backlinks: number;       // incoming
+  }[];
+  edges: { from: string; to: string }[];          // node ids, deduplicated
+  unresolved: { from: string; target: string }[]; // [[target]] with no note of that name
+};
+memory_graph(): Promise<MemoryGraph>
+```
+
+- Walks every `~/.claude/projects/*/memory/*.md` and the home memory dir
+  (whatever `memory_projects` lists), skipping `MEMORY.md` index files as nodes
+  (their links still count as edges from an index node named `MEMORY.md` of
+  that project when they point at notes outside it; inside their own dir they
+  are ignored, since the index links every note by design).
+- `[[target]]` matches `name:` slugs first, then file stems, across all dirs
+  (first match by name, ties resolved towards the same dir). Targets with `|`
+  aliases (`[[name|label]]`) use the part before `|`. Case-insensitive.
+- Frontmatter: the simple `---` block; `name`, `description`, `metadata.type`.
+- Tests: resolution across two dirs, alias syntax, unresolved reporting,
+  MEMORY.md handling, counts.
+
+### Layout (`src/panels/memory/graph.ts`, pure, tested)
+
+- `layout(graph, seed, iterations = 300)`: a small force layout, deterministic
+  from the seed (a tiny xorshift PRNG for initial positions): repulsion between
+  all nodes (Barnes-Hut not needed below 500 nodes), spring attraction along
+  edges, a weak pull to the centre, per-project clustering (nodes of the same
+  project attract their project centroid lightly), cooling over iterations.
+  Returns `{ x, y }` per node id in a 0..1 box. Runs once per graph (synchronous,
+  under 100 ms for 300 nodes) and is cached by the graph's content hash.
+- Node radius: 4 px + 1.5 px per backlink, capped at 14. Colour: the project's
+  accent (`accentFor` from `src/app/accents.ts`), home-dir notes in `--fg-muted`.
+  Unresolved links: a short dashed stub (12 px) from the source in `--warn`.
+
+### Panel
+
+- Memory panel header gets a List / Graph toggle (pref `memoryView: "list" | "graph"`,
+  default list). The graph view fills the panel below the header: an SVG with
+  pan (drag on empty space) and zoom (wheel, 0.5x to 4x, around the cursor),
+  nodes as circles with the name as a label when zoom is above 1.2x or the node
+  has 3 or more backlinks; hovering a node highlights its edges and shows a
+  tooltip (title, description, project basename, "n links, m backlinks");
+  clicking opens the note in the editor sheet (the existing `openEditor`);
+  the selected node stays highlighted. The panel's search box filters: matching
+  nodes stay full colour, others fade to 25 % opacity (no animation). A legend
+  line at the bottom: node count, edge count, unresolved count, and a "Fit"
+  button that resets pan and zoom.
+- Right click on a node: "Open", "Reveal in list" (switches to the list view
+  with the note selected), "Copy [[name]]".
+- Dev driver: `t.memoryGraph.{graphAtom, layout, reload}`.
+- `src/lib/ipc.ts`: `memory.graph()`, `MemoryGraph`.
+
+### Docs
+
+README Memory line under Panels, CHANGELOG under Unreleased, prefs.ts doc
+comment for `memoryView`.
