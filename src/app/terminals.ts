@@ -271,6 +271,9 @@ function validDims(d: { cols: number; rows: number } | undefined): d is Dims {
 export function fitTerminal(key: string): Dims | null {
   const e = entries.get(key);
   if (!e || !e.opened) return null;
+  // WebKitGTK proposes a tiny size (11x5) inside a display:none container
+  // instead of none, which would shrink a hidden tab's pty; measure the host.
+  if (!e.host.isConnected || e.host.clientWidth === 0 || e.host.clientHeight === 0) return null;
   const proposed = e.fit.proposeDimensions();
   if (!validDims(proposed)) return null;
   e.fit.fit();

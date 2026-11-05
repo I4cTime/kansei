@@ -20,6 +20,11 @@ describe("shortcuts", () => {
     expect(matchShortcut(key("KeyK"))).toBeNull();
   });
 
+  it("maps Ctrl+Shift+Backslash to the split toggle", () => {
+    expect(matchShortcut(key("Backslash"))).toEqual({ type: "toggleSplit" });
+    expect(matchShortcut(key("Backslash", { ctrlKey: true }))).toBeNull();
+  });
+
   it("labels the nav hints", () => {
     expect(panelShortcut("board", 1)).toBe("Ctrl+Shift+2");
     expect(panelShortcut("workflows", 9)).toBe("Ctrl+Shift+0");

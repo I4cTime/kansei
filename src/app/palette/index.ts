@@ -13,6 +13,7 @@ import { sessionsListAtom, projectLabel } from "../../panels/sessions/model";
 import { CLAUDE, prefsAtom, savePrefs, setPrefs } from "../prefs";
 import { store, toastError } from "../store";
 import { activateTab, activeKeyAtom, closeTab, newTabWithPicker, openTab, requestRename, restartTab, SHELL_COMMAND, tabsAtom } from "../tabs";
+import { rightKey, splitWith, unsplit } from "../split";
 import { PRESETS } from "../theme/presets";
 import { buildCommands, type Command, type PaletteActions, type PaletteInput } from "./commands";
 import { pushRecent } from "./fuzzy";
@@ -60,6 +61,8 @@ export const actions: PaletteActions = {
   closeTab,
   restartTab,
   renameTab: requestRename,
+  splitWith,
+  unsplit,
   openPanel: (id) => setPrefs({ sidebarSection: id, sidebarCollapsed: false }),
   toggleSidebar: () => setPrefs({ sidebarCollapsed: !store.get(prefsAtom).sidebarCollapsed }),
   openProject: (path, name) => void openTab({ cwd: path, command: CLAUDE, title: name }),
@@ -84,6 +87,7 @@ export function liveInput(sessions: PaletteInput["sessions"] = null): PaletteInp
   return {
     tabs: store.get(tabsAtom),
     activeKey: store.get(activeKeyAtom),
+    rightKey: rightKey(),
     home: homeDir,
     panels: PANELS.map((p) => ({ id: p.id, label: p.label })),
     tree: store.get(treeAtom) ?? [],

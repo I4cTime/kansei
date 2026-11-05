@@ -1,5 +1,6 @@
 // Tab store API (atoms re-exported from tabState.ts) and persistence to
-// <appData>/tabs.json: { version: 1, active: number, tabs: { title, cwd, command, args }[] }.
+// <appData>/tabs.json: { version: 1, active: number, tabs: { title, cwd, command, args }[],
+// split: { right: number | null, ratio } } (split.ts; right is an index into tabs).
 // Claude tabs keep command "claude" there (never the resolved path), so a later
 // prefs.claudeCommand change applies to restored tabs too.
 import { open } from "@tauri-apps/plugin-dialog";
@@ -9,6 +10,7 @@ import { CLAUDE, prefsAtom } from "./prefs";
 import { basename, debounce, getPaths, joinPath, store, toastError, uuid } from "./store";
 import { activeKeyAtom, getTab, renameRequestAtom, tabsAtom, tabsRestoredAtom, updateTab, type Tab } from "./tabState";
 import { disposeTerminal, restartTerminal } from "./terminals";
+import { afterClose, nextActiveAfterClose, setActiveKey, splitAtom, splitFromFile, splitToFile, NO_SPLIT, type SplitFile } from "./split";
 
 export { CLAUDE } from "./prefs";
 export { activeKeyAtom, activeTabAtom, renameRequestAtom, tabsAtom, tabsRestoredAtom, getTab, type Tab, type TabStatus } from "./tabState";
@@ -58,7 +60,7 @@ function makeTab(spec: TabSpec): Tab {
 export function openTab(spec: TabSpec, activate = true): string {
   const tab = makeTab(spec);
   store.set(tabsAtom, (tabs) => [...tabs, tab]);
-  if (activate || !store.get(activeKeyAtom)) store.set(activeKeyAtom, tab.key);
+  if (activate || !store.get(activeKeyAtom)) setActiveKey(tab.key);
   return tab.key;
 }
 
@@ -87,9 +89,14 @@ export function closeTab(key: string) {
   const tab = tabs[idx];
   if (tab.id) pty.kill(tab.id).catch(() => {});
   const rest = tabs.filter((t) => t.key !== key);
+  const split = afterClose(store.get(splitAtom), key);
   if (store.get(activeKeyAtom) === key) {
-    const next = rest[idx] ?? rest[idx - 1] ?? null;
-    store.set(activeKeyAtom, next ? next.key : null);
+    // The right pane keeps its tab; the left gets a neighbour (split.ts).
+    const next = nextActiveAfterClose(rest.map((t) => t.key), idx, split);
+    store.set(activeKeyAtom, next.active);
+    store.set(splitAtom, next.split);
+  } else if (split !== store.get(splitAtom)) {
+    store.set(splitAtom, split);
   }
   store.set(tabsAtom, rest);
   disposeTerminal(key);
@@ -113,9 +120,10 @@ export function requestRename(key: string) {
   store.set(renameRequestAtom, key);
 }
 
+/** Make `key` the active (left) tab; the right pane's tab swaps with it (split.ts). */
 export function activateTab(key: string) {
   if (!getTab(key)) return;
-  store.set(activeKeyAtom, key);
+  setActiveKey(key);
   if (document.hasFocus()) markTabSeen(key);
 }
 
@@ -128,7 +136,7 @@ export function cycleTab(delta: number) {
     tabs.findIndex((t) => t.key === store.get(activeKeyAtom)),
   );
   const next = tabs[(idx + delta + tabs.length) % tabs.length];
-  store.set(activeKeyAtom, next.key);
+  setActiveKey(next.key);
 }
 
 /** Re-spawn a dead tab in the same cwd, keeping its scrollback. */
@@ -139,7 +147,13 @@ export function restartTab(key: string) {
 // ---------------------------------------------------------------------------
 // persistence
 
-type TabsFile = { version: 1; active: number; tabs: { title: string; cwd: string; command: string; args: string[] }[] };
+type TabsFile = {
+  version: 1;
+  active: number;
+  tabs: { title: string; cwd: string; command: string; args: string[] }[];
+  /** Missing in files written before the split terminal; parsed by splitFromFile. */
+  split?: SplitFile;
+};
 
 function serialize(): string {
   const tabs = store.get(tabsAtom);
@@ -151,6 +165,7 @@ function serialize(): string {
     version: 1,
     active,
     tabs: tabs.map((t) => ({ title: t.title, cwd: t.cwd, command: t.command, args: t.args })),
+    split: splitToFile(store.get(splitAtom), tabs.map((t) => t.key), store.get(activeKeyAtom)),
   };
   return JSON.stringify(file, null, 2) + "\n";
 }
@@ -166,7 +181,7 @@ function parseTabsFile(text: string): TabsFile | null {
       command: t.command,
       args: Array.isArray(t.args) ? t.args.filter((a): a is string => typeof a === "string") : [],
     }));
-  return { version: 1, active: typeof raw.active === "number" ? raw.active : 0, tabs };
+  return { version: 1, active: typeof raw.active === "number" ? raw.active : 0, tabs, split: raw.split };
 }
 
 let restoreStarted = false;
@@ -190,8 +205,10 @@ export async function restoreTabs(): Promise<void> {
     if (!file) file = { version: 1, active: 0, tabs: [{ title: "", cwd: paths.home, command: CLAUDE, args: [] }] };
     const tabs = file.tabs.map((t) => makeTab({ cwd: t.cwd, command: t.command, args: t.args, title: t.title }));
     store.set(tabsAtom, tabs);
-    const active = tabs[Math.min(Math.max(0, file.active), tabs.length - 1)];
+    const activeIndex = Math.min(Math.max(0, file.active), tabs.length - 1);
+    const active = tabs[activeIndex];
     store.set(activeKeyAtom, active ? active.key : null);
+    store.set(splitAtom, active ? splitFromFile(file.split, tabs.map((t) => t.key), activeIndex) : NO_SPLIT);
   } catch (e) {
     toastError(e, "Could not restore tabs");
   } finally {
@@ -208,6 +225,7 @@ export async function restoreTabs(): Promise<void> {
   }, 300);
   store.sub(tabsAtom, persist);
   store.sub(activeKeyAtom, persist);
+  store.sub(splitAtom, persist);
   // First launch: write the default tab so the file exists.
   files.exists(target).then((ok) => {
     if (!ok) files.writeText(target, lastWritten).catch(() => {});

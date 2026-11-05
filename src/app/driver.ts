@@ -23,6 +23,7 @@ import * as boardActions from "../panels/board/actions";
 import * as calendarModel from "../panels/calendar/model";
 import * as calendarActions from "../panels/calendar/actions";
 import { closePalette, commandsNow, openPalette } from "./palette";
+import { focusedPaneAtom, rightKey, setRatio, splitAtom, splitWith, toggleSplit, unsplit } from "./split";
 import { rank, score } from "./palette/fuzzy";
 import { search as searchIpc } from "../lib/ipc";
 import { indexStatusAtom, indexingAtom, refreshIndex } from "../panels/sessions/search";
@@ -83,6 +84,11 @@ export function installDriver() {
      * (debounced 250 ms); usageDaysAtom (Map by date), usageStatusAtom, formatTokens.
      */
     usage: { usageDaysAtom, usageStatusAtom, loadUsage, formatTokens },
+    /**
+     * Split terminal: splitAtom ({ right: tab key | null, ratio }), splitWith(key), unsplit(), toggleSplit(),
+     * setRatio(r) (clamped 0.3..0.7), rightKey() (the valid right tab or null), focusedPaneAtom.
+     */
+    split: { splitAtom, splitWith, unsplit, toggleSplit, setRatio, rightKey, focusedPaneAtom },
     /** Tab status and context: activityAtom (per pty pid, after the idle-after-busy rule) and tabActivity(tab). */
     activity: { activityAtom, tabActivity },
     /** querySelector that throws a readable error when nothing matches. */

@@ -43,6 +43,10 @@ export type PaletteActions = {
   restartTab: (key: string) => void;
   /** Put the tab's rail item into edit mode. */
   renameTab: (key: string) => void;
+  /** Show the tab on the split's right pane. */
+  splitWith: (key: string) => void;
+  /** Close the split's right pane. */
+  unsplit: () => void;
   openPanel: (id: string) => void;
   toggleSidebar: () => void;
   /** claude in `path`, in a new tab titled `name`. */
@@ -59,8 +63,12 @@ export type PaletteActions = {
 
 const NO_TAB = "No tab open";
 
-/** "Switch to <title>" per tab (the active one last), then the tab actions on the active tab. */
-export function tabCommands(tabs: Tab[], activeKey: string | null, home: string | undefined, act: PaletteActions): Command[] {
+/**
+ * "Switch to <title>" per tab (the active one last), then the tab actions on the
+ * active tab, then "Split with <title>" per tab except the active one and
+ * "Close the right pane" while split (`right` = the right pane's tab key).
+ */
+export function tabCommands(tabs: Tab[], activeKey: string | null, home: string | undefined, act: PaletteActions, right: string | null = null): Command[] {
   const active = tabs.find((t) => t.key === activeKey) ?? null;
   const ordered = [...tabs.filter((t) => t !== active), ...(active ? [active] : [])];
   const out: Command[] = ordered.map((t) => ({
@@ -106,6 +114,22 @@ export function tabCommands(tabs: Tab[], activeKey: string | null, home: string 
       },
     },
   );
+  for (const t of tabs) {
+    if (t === active) continue;
+    out.push({
+      id: `split:${t.key}`,
+      group: "Tabs",
+      title: `Split with ${t.title}`,
+      hint: tildify(t.cwd, home),
+      keywords: [t.title, "right pane"],
+      disabled: t.key === right ? "Already on the right" : undefined,
+      run: () => act.splitWith(t.key),
+    });
+  }
+  const rightTab = right ? tabs.find((t) => t.key === right) : undefined;
+  if (rightTab) {
+    out.push({ id: "split:close", group: "Tabs", title: "Close the right pane", hint: rightTab.title, keywords: ["unsplit"], run: () => act.unsplit() });
+  }
   return out;
 }
 
@@ -287,6 +311,8 @@ export function themeCommands(state: ThemeState, presets: Pick<Preset, "id" | "n
 export type PaletteInput = {
   tabs: Tab[];
   activeKey: string | null;
+  /** The split's right pane tab, null while unsplit. */
+  rightKey?: string | null;
   home?: string;
   panels: { id: string; label: string }[];
   tree: WorkspaceNode[];
@@ -303,7 +329,7 @@ export type PaletteInput = {
 /** Every command, groups in order (Tabs, Panels, Projects, Sessions, Board, Themes). */
 export function buildCommands(input: PaletteInput, act: PaletteActions): Command[] {
   return [
-    ...tabCommands(input.tabs, input.activeKey, input.home, act),
+    ...tabCommands(input.tabs, input.activeKey, input.home, act, input.rightKey ?? null),
     ...panelCommands(input.panels, act),
     ...projectCommands(input.tree, input.registry, act),
     ...sessionCommands(input.sessions, input.now, input.home, act),

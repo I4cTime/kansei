@@ -4,8 +4,9 @@
 // doing (busy / waiting / idle from ~/.claude/sessions and `claude agents`)
 // and its context size. This module adds the idle-after-busy rule: a session
 // that goes from busy to idle shows as waiting ("turn finished") until its tab
-// gets keyboard input or is the active tab while the window has focus. It also
-// raises a desktop notification when a hidden tab starts waiting.
+// gets keyboard input or is in view while the window has focus: the active tab,
+// or the split's right tab while its pane has focus (split.ts). It also raises a
+// desktop notification when a hidden tab starts waiting.
 //
 // Keyed by the tab's pty child pid (Tab.pid). Imports no tabs.ts or
 // terminals.ts, which both call in here.
@@ -14,6 +15,7 @@ import { activity, pty, type TabActivity } from "../lib/ipc";
 import { prefsAtom } from "./prefs";
 import { store } from "./store";
 import { activeKeyAtom, getTab, tabsAtom, updateTab, type Tab } from "./tabState";
+import { effectiveRight, focusedPaneAtom, splitAtom } from "./split";
 
 export type { TabActivity } from "../lib/ipc";
 
@@ -155,10 +157,21 @@ function tabByPid(pid: number): Tab | undefined {
   return store.get(tabsAtom).find((t) => t.pid === pid);
 }
 
-/** The pid's tab is the active tab and the window has focus. */
+/** The tabs the user is looking at: the active one, and the right pane's while it has focus. */
+function viewKeys(): string[] {
+  const active = store.get(activeKeyAtom);
+  const out = active ? [active] : [];
+  if (store.get(focusedPaneAtom) === "right") {
+    const right = effectiveRight(store.get(splitAtom), store.get(tabsAtom).map((t) => t.key), active);
+    if (right) out.push(right);
+  }
+  return out;
+}
+
+/** The pid's tab is in view (viewKeys) and the window has focus. */
 function inView(pid: number): boolean {
   const tab = tabByPid(pid);
-  return !!tab && tab.key === store.get(activeKeyAtom) && document.hasFocus();
+  return !!tab && viewKeys().includes(tab.key) && document.hasFocus();
 }
 
 function capitalize(s: string): string {
@@ -206,10 +219,11 @@ export function startActivity(): Promise<void> {
   started = (async () => {
     await activity.onChange(onList);
     const seeActive = () => {
-      const key = store.get(activeKeyAtom);
-      if (key && document.hasFocus()) markTabSeen(key);
+      if (document.hasFocus()) for (const key of viewKeys()) markTabSeen(key);
     };
     store.sub(activeKeyAtom, seeActive);
+    // Focusing the right pane sees its tab, as activating a tab does.
+    store.sub(focusedPaneAtom, seeActive);
     window.addEventListener("focus", seeActive);
     try {
       const ptys = await pty.list();

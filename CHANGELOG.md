@@ -8,6 +8,14 @@ releases yet; everything so far is on `main` as 0.1.x.
 
 ### Added
 
+- **Split terminal** (2026-11-04). Two tabs side by side: Ctrl+Shift+\\, a
+  tab's right click menu ("Open on the right"), dragging a tab onto the right
+  half of the terminal area, or "Split with <tab>" in the palette. The left
+  pane is the active tab and activating the right tab swaps them; the divider
+  drags from 30 to 70 % and resets on double click; closing the right tab
+  unsplits. tabs.json keeps the split. A focused right pane counts as seen
+  for the tab status.
+
 - **Usage** (2026-11-04). The Calendar shows how many tokens Claude used:
   a 14-day strip of tokens in per day under the grid, and a Usage block for
   the picked day (today by default) with tokens in and out, the cache hit
@@ -113,6 +121,9 @@ releases yet; everything so far is on `main` as 0.1.x.
 
 ### Fixed
 
+- A hidden tab's terminal (and its pty) no longer shrinks to 11x5 when it is
+  hidden: WebKitGTK measured the display:none container as a small box
+  instead of nothing, so the fit now skips a host with no size (2026-11-04).
 - No more main-thread hang while the window sits on a hidden Hyprland
   workspace on NVIDIA (`__GL_SYNC_TO_VBLANK=0`, 2026-10-31; kept when a
   gaming profile in `environment.d` sets it back, 2026-11-01).

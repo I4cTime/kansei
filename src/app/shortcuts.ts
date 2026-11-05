@@ -8,7 +8,8 @@ export type ShortcutAction =
   | { type: "toggleSidebar" }
   | { type: "section"; index: number }
   | { type: "panel"; id: string }
-  | { type: "palette" };
+  | { type: "palette" }
+  | { type: "toggleSplit" };
 
 /**
  * Panels past the tenth have their own letter (Ctrl+Shift+1..9,0 cover the
@@ -43,6 +44,8 @@ export function matchShortcut(e: KeyboardEvent): ShortcutAction | null {
       return { type: "toggleSidebar" };
     case "KeyP":
       return { type: "palette" };
+    case "Backslash":
+      return { type: "toggleSplit" };
   }
   for (const [id, k] of Object.entries(PANEL_KEYS)) if (e.code === k.code) return { type: "panel", id };
   // Digit1..9 are sections 1..9, Digit0 is section 10.

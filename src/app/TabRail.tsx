@@ -1,15 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
-import { Plus, X } from "lucide-react";
+import { Columns2, Plus, X } from "lucide-react";
 import { activateTab, activeKeyAtom, closeTab, newTabWithPicker, renameRequestAtom, renameTab, tabsAtom, type Tab } from "./tabs";
 import { activityAtom, dotFor, gaugeFor, isExtended, tabActivity, type DotLook } from "./activity";
 import { prefsAtom } from "./prefs";
+import { draggedTabAtom, effectiveRight, splitAtom, splitWith, unsplit } from "./split";
+import { store } from "./store";
 import { IconButton } from "./ui";
+
+type Menu = { key: string; x: number; y: number };
 
 export function TabRail() {
   const tabs = useAtomValue(tabsAtom);
   const activeKey = useAtomValue(activeKeyAtom);
+  const split = useAtomValue(splitAtom);
+  const right = effectiveRight(split, tabs.map((t) => t.key), activeKey);
   const scroller = useRef<HTMLDivElement>(null);
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
 
   // Keep the active tab in view.
   useEffect(() => {
@@ -29,18 +37,73 @@ export function TabRail() {
         }}
       >
         {tabs.map((t) => (
-          <TabItem key={t.key} tab={t} active={t.key === activeKey} />
+          <TabItem key={t.key} tab={t} active={t.key === activeKey} right={t.key === right} onMenu={setMenu} />
         ))}
       </div>
       <div className="flex shrink-0 items-center px-1">
         <IconButton icon={Plus} label="New tab (Ctrl+Shift+T)" size="sm" onClick={() => void newTabWithPicker()} />
       </div>
       <div className="flex-1" />
+      {menu && <TabMenu menu={menu} isRight={menu.key === right} canSplit={tabs.length > 1} onClose={closeMenu} />}
     </div>
   );
 }
 
-function TabItem({ tab, active }: { tab: Tab; active: boolean }) {
+/** Right click on a tab: Open on the right (or Close the right pane), Rename, Close. */
+function TabMenu({ menu, isRight, canSplit, onClose }: { menu: Menu; isRight: boolean; canSplit: boolean; onClose: () => void }) {
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement | null)?.closest("[data-tab-menu]")) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener("mousedown", onDown, true);
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("blur", onClose);
+    window.addEventListener("resize", onClose);
+    return () => {
+      window.removeEventListener("mousedown", onDown, true);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("blur", onClose);
+      window.removeEventListener("resize", onClose);
+    };
+  }, [onClose]);
+
+  const item = (label: string, run: () => void, disabled = false) => (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      onClick={() => {
+        onClose();
+        run();
+      }}
+      className="cursor-pointer px-3 py-1 text-left text-xs text-fg hover:bg-bg-hover disabled:pointer-events-none disabled:opacity-50"
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div
+      data-tab-menu=""
+      role="menu"
+      className="fixed z-50 flex min-w-[10rem] flex-col rounded-ui border border-border bg-bg-raised py-1 shadow-lg shadow-black/30"
+      style={{ left: Math.min(menu.x, window.innerWidth - 176), top: menu.y }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {isRight ? item("Close the right pane", unsplit) : item("Open on the right", () => splitWith(menu.key), !canSplit)}
+      {item("Rename", () => store.set(renameRequestAtom, menu.key))}
+      {item("Close", () => closeTab(menu.key))}
+    </div>
+  );
+}
+
+function TabItem({ tab, active, right, onMenu }: { tab: Tab; active: boolean; right: boolean; onMenu: (m: Menu) => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(tab.title);
   const input = useRef<HTMLInputElement>(null);
@@ -85,6 +148,17 @@ function TabItem({ tab, active }: { tab: Tab; active: boolean }) {
         if (e.button === 1) closeTab(tab.key);
       }}
       onClick={() => activateTab(tab.key)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onMenu({ key: tab.key, x: e.clientX, y: e.clientY });
+      }}
+      draggable={!editing}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", tab.title);
+        store.set(draggedTabAtom, tab.key);
+      }}
+      onDragEnd={() => store.set(draggedTabAtom, null)}
       onDoubleClick={() => {
         setDraft(tab.title);
         setEditing(true);
@@ -95,6 +169,7 @@ function TabItem({ tab, active }: { tab: Tab; active: boolean }) {
     >
       {active && <span data-tab-indicator className="absolute inset-x-0 top-0 h-[2px] bg-accent" />}
       {dot && <span data-tab-dot={dot.look} className={`h-1.5 w-1.5 shrink-0 rounded-full ${dotClass(dot.look, active)}`} title={dot.title} />}
+      {right && <Columns2 data-tab-right size={12} strokeWidth={2} className="shrink-0 text-accent" aria-label="On the right pane" />}
       <div className="flex min-w-0 flex-1 flex-col">
         {editing ? (
           <input
