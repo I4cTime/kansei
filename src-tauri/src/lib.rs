@@ -5,6 +5,7 @@ mod mcp;
 mod memory;
 mod projects;
 mod pty;
+mod search;
 mod sessions;
 mod theme;
 mod watchdog;
@@ -53,6 +54,8 @@ pub fn run() {
             mcp::mcp_remove,
             mcp::mcp_extras,
             sessions::sessions_list,
+            search::search_index_refresh,
+            search::search_sessions,
             projects::projects_info,
             projects::file_executable,
             workspace::workspace_scan,

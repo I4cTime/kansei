@@ -4,19 +4,20 @@
 // runs; Esc and the backdrop close it through the overlay host.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
-import { sessions as sessionsIpc, type Session } from "../../lib/ipc";
+import { search as searchIpc, sessions as sessionsIpc, type SearchHit, type Session } from "../../lib/ipc";
 import { boardConfigAtom, snapshotAtom } from "../../panels/board/model";
 import { registryAtom, treeAtom } from "../../panels/projects/workspaceStore";
 import { sessionsListAtom } from "../../panels/sessions/model";
+import { QUERY_DEBOUNCE_MS, wantsTranscripts } from "../../panels/sessions/search";
 import { TextInput, cx } from "../../panels/ui";
 import { prefsAtom } from "../prefs";
 import { getPaths, store, toastError } from "../store";
 import { activeKeyAtom, tabsAtom } from "../tabState";
 import { focusTerminal } from "../terminals";
 import { overlayAtom } from "../../lib/overlay";
-import type { Command } from "./commands";
+import { TRANSCRIPT_BELOW_ROWS, TRANSCRIPT_ROWS, transcriptCommands, type Command } from "./commands";
 import { rank } from "./fuzzy";
-import { commandsNow, runCommand, setPaletteHome } from "./index";
+import { actions, commandsNow, runCommand, setPaletteHome } from "./index";
 
 /** Index of the next enabled row from `from` in direction `dir` (wrapping), or -1. */
 function step(rows: Command[], from: number, dir: 1 | -1): number {
@@ -75,7 +76,31 @@ export function Palette() {
     // commandsNow reads these atoms from the store; they are listed so the rows follow them.
     [tabs, activeKey, prefs.theme, prefs.effects, prefs.claudeTheme, tree, registry, snapshot, boardConfig, shared, fetched, home],
   );
-  const rows = useMemo(() => rank(commands, query, prefs.paletteRecent), [commands, query, prefs.paletteRecent]);
+  const ranked = useMemo(() => rank(commands, query, prefs.paletteRecent), [commands, query, prefs.paletteRecent]);
+
+  // Transcripts: a last group when a 3+ character query leaves fewer than 5 rows
+  // (debounced; a query change cancels the pending or running search).
+  const searchTranscripts = wantsTranscripts(query) && ranked.length < TRANSCRIPT_BELOW_ROWS;
+  const [hits, setHits] = useState<{ query: string; hits: SearchHit[] } | null>(null);
+  useEffect(() => {
+    if (!searchTranscripts) return;
+    let live = true;
+    const t = window.setTimeout(() => {
+      searchIpc.query({ query: query.trim(), limit: TRANSCRIPT_ROWS }).then(
+        (h) => live && setHits({ query, hits: h }),
+        () => live && setHits({ query, hits: [] }),
+      );
+    }, QUERY_DEBOUNCE_MS);
+    return () => {
+      live = false;
+      window.clearTimeout(t);
+    };
+  }, [query, searchTranscripts]);
+  const transcriptRows = useMemo(
+    () => (searchTranscripts && hits?.query === query ? transcriptCommands(hits.hits, shared ?? fetched, actions) : []),
+    [searchTranscripts, hits, query, shared, fetched],
+  );
+  const rows = useMemo(() => (transcriptRows.length ? [...ranked, ...transcriptRows] : ranked), [ranked, transcriptRows]);
 
   const found = selId ? rows.findIndex((r) => r.id === selId && !r.disabled) : -1;
   const sel = found >= 0 ? found : rows.length ? step(rows, -1, 1) : -1;

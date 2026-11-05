@@ -24,6 +24,8 @@ import * as calendarModel from "../panels/calendar/model";
 import * as calendarActions from "../panels/calendar/actions";
 import { closePalette, commandsNow, openPalette } from "./palette";
 import { rank, score } from "./palette/fuzzy";
+import { search as searchIpc } from "../lib/ipc";
+import { indexStatusAtom, indexingAtom, refreshIndex } from "../panels/sessions/search";
 
 declare global {
   interface Window {
@@ -70,6 +72,11 @@ export function installDriver() {
      * serializable), the fuzzy score and the ranking (rank(commands, query, recent)).
      */
     palette: { openPalette, closePalette, buildCommands: commandsNow, score, rank },
+    /**
+     * Session search: query({ query, limit }) -> SearchHit[]; refresh() runs search_index_refresh through the
+     * panel's shared state (IndexStatus); the status and indexing atoms.
+     */
+    search: { query: searchIpc.query, refresh: refreshIndex, indexStatusAtom, indexingAtom },
     /** Tab status and context: activityAtom (per pty pid, after the idle-after-busy rule) and tabActivity(tab). */
     activity: { activityAtom, tabActivity },
     /** querySelector that throws a readable error when nothing matches. */

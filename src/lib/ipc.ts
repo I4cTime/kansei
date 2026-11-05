@@ -210,6 +210,28 @@ export const sessions = {
   list: () => invoke<Session[]>("sessions_list"),
 };
 
+/** search_index_refresh result (CONTRACT.md "Session search"). `bytes` is the index size on disk. */
+export type IndexStatus = { files: number; indexed: number; skipped: number; bytes: number; tookMs: number; sessions: number };
+
+/** One session's latest matching record. The snippet marks matches with \u0001 ... \u0002. */
+export type SearchHit = {
+  sessionId: string;
+  project: string | null;
+  title: string;
+  ts: number;
+  role: "user" | "assistant";
+  snippet: string;
+  hits: number;
+  transcriptPath: string;
+};
+
+export const search = {
+  /** Bring the transcript text index (app data dir) up to date; incremental after the first run. */
+  refresh: () => invoke<IndexStatus>("search_index_refresh"),
+  /** Words AND-ed, "quoted phrases" literal, case-insensitive; one hit per session, latest first (limit default 50). */
+  query: (a: { query: string; limit?: number }) => invoke<SearchHit[]>("search_sessions", a),
+};
+
 export const projects = {
   /** Stat each absolute path (max 500 per call; relative paths are skipped). Registers nothing. */
   info: (paths: string[]) => invoke<ProjectsInfo[]>("projects_info", { paths }),

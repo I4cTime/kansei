@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type { BoardItem, BoardSnapshot, Session, WorkspaceNode } from "../../lib/ipc";
+import type { BoardItem, BoardSnapshot, SearchHit, Session, WorkspaceNode } from "../../lib/ipc";
 import type { Tab } from "../tabState";
-import { boardCommands, buildCommands, panelCommands, projectCommands, sessionCommands, tabCommands, themeCommands, type PaletteActions, type PaletteInput } from "./commands";
+import { boardCommands, buildCommands, panelCommands, projectCommands, sessionCommands, tabCommands, themeCommands, transcriptCommands, type PaletteActions, type PaletteInput } from "./commands";
 import { GROUP_ORDER, pushRecent, rank } from "./fuzzy";
 
 const act = (): PaletteActions => ({
@@ -163,6 +163,36 @@ describe("sessionCommands", () => {
 
   it("is empty before the sessions are loaded", () => {
     expect(sessionCommands(null, NOW, HOME, act())).toEqual([]);
+  });
+});
+
+describe("transcriptCommands", () => {
+  const hit = (sessionId: string, snippet = "the \u0001hidden workspace\u0002 idea"): SearchHit => ({
+    sessionId,
+    project: "/p",
+    title: `title ${sessionId}`,
+    ts: NOW,
+    role: "user",
+    snippet,
+    hits: 2,
+    transcriptPath: `/t/${sessionId}.jsonl`,
+  });
+
+  it("resumes the hit's session, at most 5, live ones disabled, hint = snippet start", () => {
+    const a = act();
+    const list = [session("live", 2, true), session("known", 5)];
+    const hits = [hit("known"), hit("live"), hit("unknown", "x".repeat(80)), hit("d"), hit("e"), hit("f")];
+    const cmds = transcriptCommands(hits, list, a);
+    expect(cmds.map((c) => c.id)).toEqual(["transcript:known", "transcript:live", "transcript:unknown", "transcript:d", "transcript:e"]);
+    expect(cmds[0]).toMatchObject({ group: "Transcripts", title: "Resume title known", hint: "the hidden workspace idea" });
+    expect(cmds[0].disabled).toBeUndefined();
+    expect(cmds[1].disabled).toBe("Already running");
+    expect(cmds[2].hint).toBe(`${"x".repeat(60)}...`);
+    void cmds[0].run();
+    expect(a.resumeSession).toHaveBeenCalledWith(list[1]);
+    void cmds[2].run();
+    expect(a.resumeSession).toHaveBeenLastCalledWith(expect.objectContaining({ id: "unknown", project: "/p", live: null, transcriptPath: "/t/unknown.jsonl" }));
+    expect(transcriptCommands([hit("z")], null, a)[0].disabled).toBeUndefined();
   });
 });
 

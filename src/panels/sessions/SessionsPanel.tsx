@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { Play, Trash } from "lucide-react";
-import { files, pty, sessions, type Session } from "../../lib/ipc";
+import { Play, RefreshCw, Trash } from "lucide-react";
+import { files, pty, search, sessions, type SearchHit, type Session } from "../../lib/ipc";
 import { CLAUDE, activateTab, openTab, tabsAtom } from "../../app/tabs";
 import { activityAtom } from "../../app/activity";
 import { Badge, Button, IconButton, Select } from "../ui";
@@ -14,12 +14,23 @@ import {
   groupByProject,
   plural,
   projectLabel,
+  projectKey,
   projectOptions,
   relativeTime,
   sessionsListAtom,
   sessionsProjectFilterAtom,
   type SessionGroup,
 } from "./model";
+import {
+  QUERY_DEBOUNCE_MS,
+  ensureFreshIndex,
+  filterHits,
+  indexStatusAtom,
+  indexingAtom,
+  refreshIndex,
+  snippetParts,
+  wantsTranscripts,
+} from "./search";
 
 const AUTO_REFRESH_MS = 15_000;
 
@@ -74,6 +85,51 @@ function useSessions() {
   return { data, loading, reload: load };
 }
 
+/**
+ * Transcript hits for `q` (CONTRACT.md "Session search"): from MIN_QUERY
+ * characters on, debounced, after a refresh when the index is stale. A newer
+ * query or a finished refresh supersedes a running one. null = not searching.
+ */
+function useTranscriptHits(q: string) {
+  const toast = useToast();
+  const indexAt = useAtomValue(indexStatusAtom)?.at;
+  const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const active = wantsTranscripts(q);
+
+  useEffect(() => {
+    if (!active) {
+      setHits(null);
+      setSearching(false);
+      return;
+    }
+    let live = true;
+    setSearching(true);
+    const t = window.setTimeout(() => {
+      // The refresh, when one starts, bumps indexAt and reruns this effect.
+      ensureFreshIndex().catch((e) => live && toast.error(e, "Could not index transcripts"));
+      search.query({ query: q.trim() }).then(
+        (h) => {
+          if (!live) return;
+          setHits(h);
+          setSearching(false);
+        },
+        (e) => {
+          if (!live) return;
+          setSearching(false);
+          toast.error(e, "Transcript search failed");
+        },
+      );
+    }, QUERY_DEBOUNCE_MS);
+    return () => {
+      live = false;
+      window.clearTimeout(t);
+    };
+  }, [q, active, indexAt, toast]);
+
+  return { active, hits: active ? hits : null, searching };
+}
+
 export function SessionsPanel() {
   const toast = useToast();
   const { data, loading, reload } = useSessions();
@@ -84,6 +140,7 @@ export function SessionsPanel() {
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [preset, setPreset] = useAtom(sessionsProjectFilterAtom);
+  const transcripts = useTranscriptHits(q);
 
   // Another panel (Projects) asked for this project's sessions.
   useEffect(() => {
@@ -134,6 +191,23 @@ export function SessionsPanel() {
   );
   const liveCount = list.filter((s) => s.live).length;
   const selected = options.find((o) => o.key === project);
+
+  const byId = useMemo(() => new Map(list.map((s) => [s.id, s])), [list]);
+  const hits = useMemo(() => filterHits(transcripts.hits ?? [], projectKey, project), [transcripts.hits, project]);
+
+  /** Enter or click on a transcript hit: Resume, or point at the running session. */
+  const resumeHit = (h: SearchHit) => {
+    const s = byId.get(h.sessionId);
+    if (s?.live) {
+      const tab = tabByPid.get(s.live.pid);
+      toast.info(tab ? `Already running, open in tab ${tab.title}` : "Already running");
+      if (tab) activateTab(tab.key);
+      return;
+    }
+    if (!home) return;
+    const cwd = h.project ?? s?.project ?? home;
+    openTab({ cwd, command: CLAUDE, args: ["--resume", h.sessionId], title: `${projectLabel(cwd, home)} (resumed)` });
+  };
 
   const resume = (s: Session) => {
     if (s.live || !home) return;
@@ -190,7 +264,7 @@ export function SessionsPanel() {
           Sessions come from ~/.claude/history.jsonl, the transcripts under ~/.claude/projects and the running Claude processes.
         </EmptyState>
       )}
-      {list.length > 0 && shown.length === 0 && (
+      {list.length > 0 && shown.length === 0 && !(hits.length > 0) && (
         <EmptyState title="No sessions match">{q ? <>Nothing matches "{q}" in this view.</> : "This project has no sessions."}</EmptyState>
       )}
 
@@ -221,6 +295,9 @@ export function SessionsPanel() {
             ))}
           </div>
         ),
+      )}
+      {transcripts.active && list.length > 0 && (
+        <TranscriptSection hits={hits} searching={transcripts.searching && transcripts.hits === null} now={now} home={home} byId={byId} tabByPid={tabByPid} onResume={resumeHit} />
       )}
       <div className="h-3" />
     </Panel>
@@ -284,6 +361,117 @@ function SessionRow({
             <IconButton icon={Trash} title={deleteTip} danger onClick={onDelete} disabled={!!s.live || !s.transcriptPath} />
           </span>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** "Index: N sessions, as of <time>" with a Refresh button; "Indexing..." while a refresh runs. */
+function IndexStatusLine({ now }: { now: number }) {
+  const toast = useToast();
+  const state = useAtomValue(indexStatusAtom);
+  const indexing = useAtomValue(indexingAtom);
+  const s = state?.status;
+  const tip = s ? `${s.files} transcripts, ${formatSize(s.bytes)} index, last refresh ${s.indexed} re-read in ${s.tookMs} ms` : undefined;
+  return (
+    <div data-search-status className="flex items-center gap-1 px-3 pb-1 text-[11px] text-fg-muted tabular-nums">
+      <span className="min-w-0 flex-1 truncate" title={tip}>
+        {indexing ? "Indexing..." : s && state ? `Index: ${plural(s.sessions, "session")}, as of ${relativeTime(state.at, Math.max(now, state.at))}` : "Index: not built yet"}
+      </span>
+      <IconButton
+        icon={RefreshCw}
+        title="Refresh the transcript index"
+        className="h-5 w-5"
+        disabled={indexing}
+        onClick={() => void refreshIndex().catch((e) => toast.error(e, "Could not index transcripts"))}
+      />
+    </div>
+  );
+}
+
+function TranscriptSection({
+  hits,
+  searching,
+  now,
+  home,
+  byId,
+  tabByPid,
+  onResume,
+}: {
+  hits: SearchHit[];
+  searching: boolean;
+  now: number;
+  home?: string;
+  byId: Map<string, Session>;
+  tabByPid: Map<number, { key: string; title: string }>;
+  onResume: (h: SearchHit) => void;
+}) {
+  return (
+    <div data-transcripts>
+      <SectionHeader title="Transcripts" count={searching ? undefined : hits.length} />
+      <IndexStatusLine now={now} />
+      {searching && <div className="px-3 py-1 text-[11px] text-fg-muted">Searching...</div>}
+      {!searching && hits.length === 0 && <div className="px-3 py-1 text-[11px] text-fg-muted">No transcript matches.</div>}
+      {hits.map((h) => {
+        const s = byId.get(h.sessionId);
+        const tab = s?.live ? tabByPid.get(s.live.pid) : undefined;
+        return <TranscriptRow key={h.sessionId} h={h} now={now} home={home} live={!!s?.live} tab={tab} onResume={() => onResume(h)} />;
+      })}
+    </div>
+  );
+}
+
+function TranscriptRow({
+  h,
+  now,
+  home,
+  live,
+  tab,
+  onResume,
+}: {
+  h: SearchHit;
+  now: number;
+  home?: string;
+  live: boolean;
+  tab?: { key: string; title: string };
+  onResume: () => void;
+}) {
+  const tip = live ? "Already running" + (tab ? `, open in tab ${tab.title}` : "") : `Resume: claude --resume ${h.sessionId}`;
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      data-transcript-hit={h.sessionId}
+      title={tip}
+      onClick={onResume}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && e.target === e.currentTarget) {
+          e.preventDefault();
+          onResume();
+        }
+      }}
+      className="cursor-pointer px-3 py-1.5 outline-none hover:bg-bg-hover focus-visible:bg-bg-hover"
+    >
+      <div className="flex min-w-0 items-start gap-1.5">
+        <span className="min-w-0 flex-1 truncate text-[13px] leading-snug text-fg">{h.title}</span>
+        {live && <Badge tone="ok">LIVE</Badge>}
+      </div>
+      <div className="mt-0.5 line-clamp-3 break-words text-[11.5px] leading-snug text-fg-muted" data-snippet>
+        <span className="text-fg-muted">{h.role === "assistant" ? "Claude: " : "You: "}</span>
+        {snippetParts(h.snippet).map((p, i) =>
+          p.mark ? (
+            <mark key={i} className="bg-transparent font-semibold text-accent">
+              {p.text}
+            </mark>
+          ) : (
+            <span key={i}>{p.text}</span>
+          ),
+        )}
+      </div>
+      <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 text-[11px] leading-snug text-fg-muted tabular-nums">
+        <span title={h.project ?? "Project folder could not be resolved"}>{projectLabel(h.project, home)}</span>
+        <span title={absoluteTime(h.ts)}>{relativeTime(h.ts, now)}</span>
+        <span>{plural(h.hits, "hit")}</span>
       </div>
     </div>
   );
