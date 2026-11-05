@@ -1,11 +1,12 @@
-// Calendar panel (CONTRACT.md "Board and Calendar"): week (default) or month
-// view of the plan layer (weekly rhythm + per-day overrides in
-// schedule.json), the board tasks scheduled on each day, and the Claude
-// prompts per project that day. Tasks drag onto a day to get its date.
+// Calendar panel (CONTRACT.md "Board and Calendar", "Usage"): week (default)
+// or month view of the plan layer (weekly rhythm + per-day overrides in
+// schedule.json), the board tasks scheduled on each day, the Claude prompts
+// per project that day, and the tokens used: a 14-day strip under the grid
+// and the selected day's Usage block. Tasks drag onto a day to get its date.
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useAtomValue } from "jotai";
-import { ChevronLeft, ChevronRight, Repeat } from "lucide-react";
-import { schedule as scheduleIpc, type BoardItem } from "../../lib/ipc";
+import { ChevronLeft, ChevronRight, RefreshCw, Repeat } from "lucide-react";
+import { schedule as scheduleIpc, type BoardItem, type UsageDay } from "../../lib/ipc";
 import { Badge, Button, IconButton, cx } from "../ui";
 import { EmptyState, Panel, SectionHeader } from "../shared/list";
 import { openSheet } from "../shared/Sheet";
@@ -42,10 +43,26 @@ import {
   type Ymd,
 } from "./model";
 import { DaySheet, RhythmSheet } from "./sheets";
+import {
+  USAGE_REFRESH_MS,
+  USAGE_STRIP_DAYS,
+  USAGE_TOP_PROJECTS,
+  formatTokens,
+  inputTokens,
+  loadUsage,
+  modelTurns,
+  stripDays,
+  topProjects,
+  usageDaysAtom,
+  usageLine,
+  usageLoadingAtom,
+  usageRange,
+} from "./usage";
 
 type View = "week" | "month";
 const MAX_CELL_TASKS = 4;
-const ACTIVITY_REFRESH_MS = 5 * 60_000;
+/** Activity and usage reload together on this interval. */
+const ACTIVITY_REFRESH_MS = USAGE_REFRESH_MS;
 const DRAG_SLOP = 4;
 
 type Drag = { item: BoardItem; pointerId: number; x0: number; y0: number; x: number; y: number; active: boolean; over: Ymd | null };
@@ -117,6 +134,90 @@ function ActivityStrip({ list, home, compact }: { list: DayActivity | undefined;
   );
 }
 
+/**
+ * Tokens in per day for USAGE_STRIP_DAYS days, bars scaled to the strip's
+ * busiest day, today in the accent colour. Nothing without usage.
+ */
+function UsageStrip({ days, usage, today, selected, onPick }: { days: Ymd[]; usage: Map<Ymd, UsageDay>; today: Ymd; selected: Ymd; onPick: (d: Ymd) => void }) {
+  const bars = days.map((d) => {
+    const u = usage.get(d);
+    return { d, u, v: u ? inputTokens(u.total) : 0 };
+  });
+  const max = Math.max(0, ...bars.map((b) => b.v));
+  if (max === 0) return null;
+  return (
+    <div className="px-3 pt-2" data-usage-strip="">
+      <div className="flex items-baseline justify-between text-[10px] text-fg-muted">
+        <span>Tokens in, {USAGE_STRIP_DAYS} days</span>
+        <span className="tabular-nums">max {formatTokens(max)}</span>
+      </div>
+      <div className="mt-0.5 flex h-7 items-end gap-px">
+        {bars.map(({ d, u, v }) => (
+          <button
+            key={d}
+            type="button"
+            onClick={() => onPick(d)}
+            data-usage-bar={d}
+            title={`${shortDayLabel(d)}${d === today ? " (today)" : ""}: ${u ? usageLine(u.total) : "no usage"}`}
+            aria-label={`${shortDayLabel(d)}: ${u ? usageLine(u.total) : "no usage"}`}
+            className={cx("flex h-full min-w-0 flex-1 cursor-pointer items-end rounded-[2px] hover:bg-bg-hover", d === selected && "bg-bg-hover")}
+          >
+            <span className={cx("block w-full rounded-t-[1px]", d === today ? "bg-accent" : "bg-fg-muted/45")} style={{ height: v > 0 ? `${Math.max(6, (v / max) * 100)}%` : "0" }} />
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-px pt-px" aria-hidden>
+        {bars.map(({ d }) => (
+          <span key={d} className="flex flex-1 justify-center">
+            {d === today && <span className="h-1 w-1 rounded-full bg-accent" />}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The selected day's tokens: totals, the top projects with share bars, the models. Nothing without usage. */
+function UsageBlock({ date, today, day, home, loading, onRefresh }: { date: Ymd; today: Ymd; day: UsageDay | undefined; home?: string; loading: boolean; onRefresh: () => void }) {
+  if (!day || day.total.turns === 0) return null;
+  const projects = topProjects(day, USAGE_TOP_PROJECTS);
+  const max = projects.length > 0 ? inputTokens(projects[0].usage) : 0;
+  const models = modelTurns(day);
+  const modelsText = models.map((m) => `${m.model} ${m.turns}`).join(", ");
+  return (
+    <div data-usage-day={date}>
+      <SectionHeader
+        title={`Usage · ${date === today ? "today" : shortDayLabel(date)}`}
+        actions={<IconButton icon={RefreshCw} title={loading ? "Refreshing usage..." : "Refresh usage"} onClick={onRefresh} disabled={loading} />}
+      />
+      <div className="px-3 text-xs text-fg tabular-nums" data-usage-line="">
+        {usageLine(day.total)}
+      </div>
+      <div className="flex flex-col gap-1 px-3 pt-1.5">
+        {projects.map((p) => {
+          const n = inputTokens(p.usage);
+          return (
+            <div key={p.project} className="min-w-0" title={`${p.project || "Unknown project"}: ${usageLine(p.usage)}`} data-usage-project={p.project}>
+              <div className="flex min-w-0 items-baseline gap-2 text-[11px]">
+                <span className="min-w-0 flex-1 truncate text-fg">{p.project ? projectLabel(p.project, home) : "unknown"}</span>
+                <span className="shrink-0 text-fg-muted tabular-nums">{formatTokens(n)} in</span>
+              </div>
+              <div className="mt-0.5 h-0.5 w-full rounded-full bg-border/60">
+                <div className="h-full rounded-full bg-accent" style={{ width: `${max > 0 ? Math.max(2, (n / max) * 100) : 0}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {models.length > 0 && (
+        <div className="truncate px-3 pt-1.5 text-[11px] text-fg-muted" title={`Turns per model: ${modelsText}`} data-usage-models="">
+          models: {modelsText}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CalendarPanel() {
   const toast = useToast();
   const config = useAtomValue(boardConfigAtom);
@@ -133,6 +234,12 @@ export function CalendarPanel() {
   const [anchor, setAnchor] = useState<Ymd>(today);
   const [activity, setActivity] = useState<Map<Ymd, DayActivity>>(new Map());
   const failing = useRef(false);
+  const usageFailing = useRef(false);
+  const usage = useAtomValue(usageDaysAtom);
+  const usageLoading = useAtomValue(usageLoadingAtom);
+  /** The day whose Usage block shows: the last day opened or picked, else today. */
+  const [picked, setPicked] = useState<Ymd | null>(null);
+  const selected = picked ?? today;
 
   const items = useMemo(() => snap?.items ?? [], [snap]);
   const areas = useMemo(
@@ -149,6 +256,23 @@ export function CalendarPanel() {
   const from = weeks[0][0];
   const to = weeks[weeks.length - 1][6];
 
+  const strip = useMemo(() => stripDays(from, to, today), [from, to, today]);
+
+  const loadUsageNow = useCallback(
+    (silent: boolean, debounceMs?: number) => {
+      const r = usageRange(from, to, today);
+      loadUsage(r.from, r.to, debounceMs).then(
+        () => (usageFailing.current = false),
+        (e) => {
+          if (!silent || !usageFailing.current) toast.error(e, "Could not read Claude usage");
+          usageFailing.current = true;
+        },
+      );
+    },
+    [from, to, today, toast],
+  );
+
+  /** Activity and usage for the visible range (usage also covers the strip), loaded together. */
   const loadActivity = useCallback(
     (silent: boolean) => {
       scheduleIpc.activity(from, to).then(
@@ -161,8 +285,9 @@ export function CalendarPanel() {
           failing.current = true;
         },
       );
+      loadUsageNow(silent);
     },
-    [from, to, toast],
+    [from, to, toast, loadUsageNow],
   );
   useEffect(() => {
     loadActivity(false);
@@ -174,6 +299,7 @@ export function CalendarPanel() {
 
   const openDay = (ymd: Ymd) => {
     if (justDragged.current) return;
+    setPicked(ymd === today ? null : ymd);
     openSheet((close) => <DaySheet date={ymd} title={`${WEEKDAY_NAMES[weekdayIndex(ymd)]} ${ymd}`} areas={areas} close={close} />);
   };
   const openRhythm = () => openSheet((close) => <RhythmSheet areas={areas} close={close} />);
@@ -220,7 +346,15 @@ export function CalendarPanel() {
         </div>
         <span className="flex-1" />
         <IconButton icon={ChevronLeft} title={view === "week" ? "Previous week" : "Previous month"} onClick={() => step(-1)} />
-        <Button variant="ghost" onClick={() => setAnchor(today)} disabled={showsToday} className="px-1.5">
+        <Button
+          variant="ghost"
+          onClick={() => {
+            setAnchor(today);
+            setPicked(null);
+          }}
+          disabled={showsToday && picked === null}
+          className="px-1.5"
+        >
           Today
         </Button>
         <IconButton icon={ChevronRight} title={view === "week" ? "Next week" : "Next month"} onClick={() => step(1)} />
@@ -275,6 +409,9 @@ export function CalendarPanel() {
           </div>
         </div>
       )}
+
+      <UsageStrip days={strip} usage={usage} today={today} selected={selected} onPick={(d) => setPicked(d === today ? null : d)} />
+      <UsageBlock date={selected} today={today} day={usage.get(selected)} home={home} loading={usageLoading} onRefresh={() => loadUsageNow(false, 0)} />
 
       {!config ? (
         <NoBoardLine className="px-3 pt-2" />

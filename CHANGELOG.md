@@ -8,6 +8,15 @@ releases yet; everything so far is on `main` as 0.1.x.
 
 ### Added
 
+- **Usage** (2026-11-04). The Calendar shows how many tokens Claude used:
+  a 14-day strip of tokens in per day under the grid, and a Usage block for
+  the picked day (today by default) with tokens in and out, the cache hit
+  share, the turn count, the top five projects with share bars and the turns
+  per model. The Today strip appends today's total. The numbers come from an
+  incremental index of the transcripts (subagents included, streamed copies
+  of a message counted once) under `~/.local/share/kansei/usage/`, refreshed
+  with the Calendar's activity every five minutes or from the block's
+  Refresh button. Tokens only, no prices.
 - **Session search** (2026-11-04). The Sessions search box searches the
   transcripts themselves from three characters on: every word must occur in
   a message, "quoted phrases" match literally, and each session shows its

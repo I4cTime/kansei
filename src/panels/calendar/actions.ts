@@ -1,9 +1,21 @@
 // Calendar side effects: read schedule.json at boot, save every change
-// through schedule_write (which also renders SCHEDULE.md), and keep the
-// date current so the Today strip and SCHEDULE.md roll over at midnight.
+// through schedule_write (which also renders SCHEDULE.md), keep the date
+// current so the Today strip and SCHEDULE.md roll over at midnight, and keep
+// today's usage fresh for the Today strip when the Calendar is not loading it.
 import { schedule as scheduleIpc, type Schedule } from "../../lib/ipc";
 import { store, toastError } from "../../app/store";
 import { sanitizeSchedule, scheduleAtom, todayAtom, todayYmd } from "./model";
+import { loadUsage, usageIsStale } from "./usage";
+
+/** Wait after boot before the first usage refresh, so it does not compete with the first paint. */
+const USAGE_BOOT_DELAY_MS = 3_000;
+
+/** Load today's usage when no load covered it within the usage interval (errors stay quiet here). */
+function refreshTodayUsage(): void {
+  const today = store.get(todayAtom);
+  if (document.hidden || !usageIsStale(today)) return;
+  loadUsage(today, today).catch(() => {});
+}
 
 export async function loadSchedule(): Promise<void> {
   try {
@@ -35,7 +47,9 @@ export function startCalendar(): void {
   if (started) return;
   started = true;
   void loadSchedule();
+  window.setTimeout(refreshTodayUsage, USAGE_BOOT_DELAY_MS);
   window.setInterval(() => {
+    refreshTodayUsage();
     const now = todayYmd();
     if (store.get(todayAtom) === now) return;
     store.set(todayAtom, now);

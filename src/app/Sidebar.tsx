@@ -4,13 +4,15 @@ import { CalendarDays, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { PANELS } from "../panels";
 import { boardConfigAtom, snapshotAtom } from "../panels/board/model";
 import { dayTasks, scheduleAtom, todayAtom, todayPlan } from "../panels/calendar/model";
+import { formatTokens, inputTokens, usageDaysAtom } from "../panels/calendar/usage";
 import { SIDEBAR_DEFAULT, SIDEBAR_MIN, SIDEBAR_RAIL, clampSidebar, prefsAtom, setPrefs } from "./prefs";
 import { panelShortcut } from "./shortcuts";
 import { IconButton } from "./ui";
 
 /**
- * One line above the nav: today's area and how many tasks are scheduled (the
- * count only with a connected board). Opens Calendar.
+ * One line above the nav: today's area, how many tasks are scheduled (the
+ * count only with a connected board) and today's tokens in (when above 0).
+ * Opens Calendar.
  */
 function TodayStrip() {
   const today = useAtomValue(todayAtom);
@@ -19,7 +21,9 @@ function TodayStrip() {
   const config = useAtomValue(boardConfigAtom);
   const plan = todayPlan(schedule, today);
   const n = dayTasks(snap?.items ?? [], today).length;
-  const text = `Today · ${plan.area ?? "no plan"}${config ? ` · ${n} ${n === 1 ? "task" : "tasks"}` : ""}`;
+  const used = useAtomValue(usageDaysAtom).get(today);
+  const tokens = used ? inputTokens(used.total) : 0;
+  const text = `Today · ${plan.area ?? "no plan"}${config ? ` · ${n} ${n === 1 ? "task" : "tasks"}` : ""}${tokens > 0 ? ` · ${formatTokens(tokens)} tok` : ""}`;
   return (
     <button
       type="button"

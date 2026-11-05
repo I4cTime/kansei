@@ -318,13 +318,24 @@ Click a day for the Day sheet (area, note, the day's tasks with unschedule, and
 a day or from the Unscheduled list of Ready and In progress tasks without a
 date) onto another day to set its date.
 
+Usage: under the grid a strip of bars shows the tokens sent to Claude per day
+for the last 14 days (today in the accent colour, hover a bar for its numbers,
+click it to pick that day), and a Usage block shows the picked day (today
+unless you opened or picked another): tokens in (fresh input plus cache writes
+and reads), tokens out, the cache hit share and the turn count, the five
+projects with the most tokens in, and the turns per model. Tokens only, no
+prices. The numbers come from the transcripts under `~/.claude/projects`
+(subagents count towards their session), indexed incrementally into
+`<appData>/usage/` with the activity dots' five-minute refresh or the block's
+Refresh button. The Today strip adds today's total (`· 31M tok`).
+
 Kansei writes `SCHEDULE.md` into the first workspace root (`~/Develop`) at
 startup, after every board fetch, task date change and schedule change: today,
 this week, the next 30 days, the weekly rhythm and the unscheduled tasks. The
 first time, it appends `Schedule: @SCHEDULE.md` to that root's `CLAUDE.md`
 (once; remove the line and it stays removed), so every Claude session there
 knows the plan. The sidebar's Today strip (`Today · <area> · <n> tasks`, the
-count only with a connected board) opens
+count only with a connected board, then today's tokens in when there are any) opens
 the Calendar, and the Projects panel marks the project of today's area with a
 `today` chip and lists it first in its group.
 

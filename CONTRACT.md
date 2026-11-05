@@ -198,6 +198,8 @@ The files allowlist needed no change: `~/.claude/**` was already readable.
 - `workspaces.json`: the workspace registry (see "Workspaces").
 - `search/`: the transcript text index, `<sessionId>.txt` record files and
   `index.json` (see "Session search"). A cache: deleting it only costs a rebuild.
+- `usage/`: the token usage index, `<sessionId>.json` per-day and per-model
+  buckets and `index.json` (see "Usage"). A cache like `search/`.
 
 ## Visual language
 
@@ -1538,3 +1540,129 @@ README Sessions/Panels line, CHANGELOG under Unreleased.
   1.3 s in a release build (7.2 s debug), index 4.4 MB; an incremental
   refresh 0.1 s; queries 2 ms in the release build, about 30 ms through IPC
   in the debug app (sessions_list data included).
+
+## Usage (added 2026-11-04)
+
+Tokens per day, project and model from the transcripts, shown in the Calendar
+beside the activity dots. Tokens only, no prices. Task kansei#11.
+
+### Index (`src-tauri/src/usage.rs`)
+
+- Same walk and change detection as the search index (share the transcript
+  walker and the `{ size, mtimeMs }` manifest logic with `search.rs`; one
+  helper module, no duplicated walking code). Location `<appData>/usage/`:
+  `index.json` manifest plus `<sessionId>.json` holding that session's turns
+  aggregated per local day and model:
+
+  ```ts
+  type UsageBucket = { turns: number; input: number; cacheCreate: number; cacheRead: number; output: number };
+  // <sessionId>.json
+  { project: string | null; days: Record<Ymd, Record<model, UsageBucket>> }
+  ```
+
+- Extraction: `type == "assistant"` lines with `message.usage`; one turn per
+  `message.id` (streamed duplicates of the same id: the last line wins, so
+  collect per id while reading, then aggregate). `input_tokens`,
+  `cache_creation_input_tokens`, `cache_read_input_tokens`, `output_tokens`;
+  missing fields count 0. Day = local date of `timestamp` (reuse the local date
+  helpers in board.rs). Subagent transcripts count towards their parent session.
+  Lines without `message.model` go under model `"unknown"`.
+- `usage_refresh() -> IndexStatus` (same shape as the search one) and
+  `usage_days(from, to) -> UsageDay[]`:
+
+  ```ts
+  type UsageDay = {
+    date: Ymd;
+    total: UsageBucket;
+    projects: Record<string, UsageBucket>;   // project path (or "" when unknown)
+    models: Record<string, UsageBucket>;
+  };
+  ```
+
+  Only days with at least one turn are returned, ascending. The project is the
+  session's project as `sessions_list` resolves it.
+- Derived, front end: context share `cacheRead / (input + cacheCreate + cacheRead)`
+  as a percentage ("cache hit share"), and `k`/`M` formatting (1.2M, 86k).
+- Tests: extraction and id dedupe from fixture lines, day bucketing across a
+  local midnight, aggregation per project and model, manifest skip of an
+  unchanged file.
+
+### Front end
+
+- `src/panels/calendar/usage.ts`: `usageDaysAtom`, `loadUsage(from, to)`
+  (debounced with the activity load: same range, refreshed together and on the
+  same interval), pure helpers `sumBuckets`, `cacheShare`, `formatTokens`,
+  `topProjects(day, n)`. Tested.
+- Calendar panel: under the selected day's plan a "Usage" block: one line
+  "1.2M in · 86k out · 94 % cache · 41 turns", then up to five project rows
+  (basename, tokens in, share bar as a thin accent bar scaled to the day's max)
+  and a "models" line (model names with their turn counts). The visible week or
+  month gets a 14-day strip of bars (total input per day, scaled to the range
+  max, today marked) next to the activity dots, with a title per bar. Nothing
+  renders for a day with no usage. A Refresh action in the block header runs
+  `usage_refresh` and reloads.
+- Today strip: appends the day's input total ("· 1.2M tok") when it is above 0.
+- Dev driver: `t.usage.{usageDaysAtom, loadUsage, formatTokens}`.
+- `src/lib/ipc.ts`: `usage.refresh()`, `usage.days(from, to)`, the types above.
+
+### Docs
+
+README Calendar section (a Usage paragraph), CHANGELOG under Unreleased, the
+Persistence list in CONTRACT gets `<appData>/usage/`.
+
+### As implemented (2026-11-04)
+
+- `src-tauri/src/transcripts.rs` holds what both indexes share: discovery
+  (`discover`, the two-level subagent walk), `parse_iso_ms`, a streaming
+  `for_each_line`, the `index.json` manifest, `IndexStatus`, `par_map` and
+  `refresh_index(kind, ...)`, which runs the change detection, the parallel
+  per-session rebuild, the atomic manifest write and the stray-file sweep;
+  each index supplies only how a session's file is built (`IndexKind`: version,
+  extension, name, its own refresh lock). Search behaviour is unchanged.
+  Symlinked transcripts are not followed (as before for search), so a forked
+  session whose `subagents/` links into another session's counts each turn
+  once, under the session that owns the file.
+- A turn is the last line of its `message.id` across all of a session's
+  transcripts; lines without an id are each a turn. A turn without a
+  timestamp takes the previous line's; one before any timestamp is dropped.
+  Turns of model `<synthetic>` (Claude Code's placeholder messages, all
+  zeros, no API call) are not counted. The same session id under two project
+  dirs (a renamed project) is one session. Lines starting with `{"type":"`
+  that are not assistant lines are dropped unparsed; otherwise a field
+  visitor stops at a non-assistant `type` or a `message` without `usage`.
+- The session's project is resolved at refresh time from `sessions_list`
+  data (falling back to the decoded project dir) and stored in its file, so it
+  changes when the session's transcripts do. Days are local days at refresh
+  time (`board::local_day_of_ms`). `usage_days` takes at most 400 days
+  (`MAX_ACTIVITY_DAYS`, same rule as `activity_days`) and reads every session
+  file (about 160 KB in all on the author's machine).
+- "Tokens in" everywhere in the UI (the day line, project rows and their
+  bars, the strip, the Today strip) is `input + cacheCreate + cacheRead`,
+  so the cache share is a share of it. `formatTokens` uses one decimal under
+  10 and whole numbers above ("1.2k", "86k", "1.2M", "86M", "1.2B").
+- `loadUsage(from, to, debounceMs = 250)` runs `usage_refresh` then
+  `usage_days`, one load at a time; calls inside the debounce collapse into
+  the last and all callers get its `{ status, days }`. Results merge into
+  `usageDaysAtom` (a `Map` by date; the loaded range is replaced, other days
+  kept), so the Today strip keeps today while the Calendar shows another
+  month. The Calendar loads `usageRange(from, to, today)`: its visible range
+  widened to the strip's first day. `usageStatusAtom` keeps the last
+  `IndexStatus`.
+- The 14-day strip ends today when the visible range contains today, else on
+  the range's last day; it sits under the grid and is hidden when its 14 days
+  have no usage. Clicking a bar picks that day. The "selected day" is the last
+  day opened (a click on a cell, which still opens the Day sheet) or picked on
+  the strip, else today; the Today button resets it. The Usage block sits
+  under the strip, above Unscheduled, titled `Usage · today` or
+  `Usage · <Mon 3 Nov>`; its Refresh button runs an undebounced load (no
+  spinner). Usage errors toast once ("Could not read Claude usage") and never
+  block the activity dots.
+- The Today strip has its own source: three seconds after boot, then on the
+  Calendar's one-minute clock, today's usage is loaded when no load covering
+  today finished in the last five minutes (`usageIsStale`), so it stays
+  current with the Calendar closed.
+- Dev driver: `t.usage.{usageDaysAtom, usageStatusAtom, loadUsage, formatTokens}`.
+- Measured on the author's corpus (479 transcripts, 4.8 GB, 63 sessions with
+  turns): first refresh 0.87 s in a release build, 2.4 s in a debug test
+  build and 1.6 s in the debug app (warm page cache); index 164 KB; an
+  incremental refresh 1 to 75 ms; `usage_days` over 14 days 3 ms.

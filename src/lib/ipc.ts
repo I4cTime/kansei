@@ -210,7 +210,7 @@ export const sessions = {
   list: () => invoke<Session[]>("sessions_list"),
 };
 
-/** search_index_refresh result (CONTRACT.md "Session search"). `bytes` is the index size on disk. */
+/** search_index_refresh and usage_refresh result (CONTRACT.md "Session search", "Usage"). `bytes` is the index size on disk. */
 export type IndexStatus = { files: number; indexed: number; skipped: number; bytes: number; tookMs: number; sessions: number };
 
 /** One session's latest matching record. The snippet marks matches with \u0001 ... \u0002. */
@@ -230,6 +230,25 @@ export const search = {
   refresh: () => invoke<IndexStatus>("search_index_refresh"),
   /** Words AND-ed, "quoted phrases" literal, case-insensitive; one hit per session, latest first (limit default 50). */
   query: (a: { query: string; limit?: number }) => invoke<SearchHit[]>("search_sessions", a),
+};
+
+/** Tokens of a set of assistant turns (CONTRACT.md "Usage"). */
+export type UsageBucket = { turns: number; input: number; cacheCreate: number; cacheRead: number; output: number };
+
+/** One local day with at least one turn. */
+export type UsageDay = {
+  date: string;
+  total: UsageBucket;
+  /** Project path ("" when unknown) as sessions_list resolves it. */
+  projects: Record<string, UsageBucket>;
+  models: Record<string, UsageBucket>;
+};
+
+export const usage = {
+  /** Bring the usage index (app data dir) up to date; incremental after the first run. */
+  refresh: () => invoke<IndexStatus>("usage_refresh"),
+  /** Inclusive local-date range, at most 400 days; only days with turns, ascending. */
+  days: (from: string, to: string) => invoke<UsageDay[]>("usage_days", { from, to }),
 };
 
 export const projects = {

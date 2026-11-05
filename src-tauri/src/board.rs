@@ -41,7 +41,7 @@ const GH_TIMEOUT: Duration = Duration::from_secs(60);
 /// Pagination stops after this many pages of 100 items.
 const MAX_PAGES: usize = 50;
 /// `activity_days` refuses longer ranges.
-const MAX_ACTIVITY_DAYS: i64 = 400;
+pub const MAX_ACTIVITY_DAYS: i64 = 400;
 
 pub const SCHEDULE_PARAGRAPH: &str = "Schedule: @SCHEDULE.md";
 
