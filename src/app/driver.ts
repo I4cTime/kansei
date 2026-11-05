@@ -26,6 +26,7 @@ import { closePalette, commandsNow, openPalette } from "./palette";
 import { rank, score } from "./palette/fuzzy";
 import { search as searchIpc } from "../lib/ipc";
 import { indexStatusAtom, indexingAtom, refreshIndex } from "../panels/sessions/search";
+import { formatTokens, loadUsage, usageDaysAtom, usageStatusAtom } from "../panels/calendar/usage";
 
 declare global {
   interface Window {
@@ -77,6 +78,11 @@ export function installDriver() {
      * panel's shared state (IndexStatus); the status and indexing atoms.
      */
     search: { query: searchIpc.query, refresh: refreshIndex, indexStatusAtom, indexingAtom },
+    /**
+     * Usage: loadUsage(from, to) runs usage_refresh then usage_days and resolves to { status, days }
+     * (debounced 250 ms); usageDaysAtom (Map by date), usageStatusAtom, formatTokens.
+     */
+    usage: { usageDaysAtom, usageStatusAtom, loadUsage, formatTokens },
     /** Tab status and context: activityAtom (per pty pid, after the idle-after-busy rule) and tabActivity(tab). */
     activity: { activityAtom, tabActivity },
     /** querySelector that throws a readable error when nothing matches. */
