@@ -198,6 +198,8 @@ The files allowlist needed no change: `~/.claude/**` was already readable.
 - `workspaces.json`: the workspace registry (see "Workspaces").
 - `search/`: the transcript text index, `<sessionId>.txt` record files and
   `index.json` (see "Session search"). A cache: deleting it only costs a rebuild.
+- `usage/`: the token usage index, `<sessionId>.json` per-day and per-model
+  buckets and `index.json` (see "Usage"). A cache like `search/`.
 
 ## Visual language
 
@@ -1607,3 +1609,60 @@ beside the activity dots. Tokens only, no prices. Task kansei#11.
 
 README Calendar section (a Usage paragraph), CHANGELOG under Unreleased, the
 Persistence list in CONTRACT gets `<appData>/usage/`.
+
+### As implemented (2026-11-04)
+
+- `src-tauri/src/transcripts.rs` holds what both indexes share: discovery
+  (`discover`, the two-level subagent walk), `parse_iso_ms`, a streaming
+  `for_each_line`, the `index.json` manifest, `IndexStatus`, `par_map` and
+  `refresh_index(kind, ...)`, which runs the change detection, the parallel
+  per-session rebuild, the atomic manifest write and the stray-file sweep;
+  each index supplies only how a session's file is built (`IndexKind`: version,
+  extension, name, its own refresh lock). Search behaviour is unchanged.
+  Symlinked transcripts are not followed (as before for search), so a forked
+  session whose `subagents/` links into another session's counts each turn
+  once, under the session that owns the file.
+- A turn is the last line of its `message.id` across all of a session's
+  transcripts; lines without an id are each a turn. A turn without a
+  timestamp takes the previous line's; one before any timestamp is dropped.
+  Turns of model `<synthetic>` (Claude Code's placeholder messages, all
+  zeros, no API call) are not counted. The same session id under two project
+  dirs (a renamed project) is one session. Lines starting with `{"type":"`
+  that are not assistant lines are dropped unparsed; otherwise a field
+  visitor stops at a non-assistant `type` or a `message` without `usage`.
+- The session's project is resolved at refresh time from `sessions_list`
+  data (falling back to the decoded project dir) and stored in its file, so it
+  changes when the session's transcripts do. Days are local days at refresh
+  time (`board::local_day_of_ms`). `usage_days` takes at most 400 days
+  (`MAX_ACTIVITY_DAYS`, same rule as `activity_days`) and reads every session
+  file (about 160 KB in all on the author's machine).
+- "Tokens in" everywhere in the UI (the day line, project rows and their
+  bars, the strip, the Today strip) is `input + cacheCreate + cacheRead`,
+  so the cache share is a share of it. `formatTokens` uses one decimal under
+  10 and whole numbers above ("1.2k", "86k", "1.2M", "86M", "1.2B").
+- `loadUsage(from, to, debounceMs = 250)` runs `usage_refresh` then
+  `usage_days`, one load at a time; calls inside the debounce collapse into
+  the last and all callers get its `{ status, days }`. Results merge into
+  `usageDaysAtom` (a `Map` by date; the loaded range is replaced, other days
+  kept), so the Today strip keeps today while the Calendar shows another
+  month. The Calendar loads `usageRange(from, to, today)`: its visible range
+  widened to the strip's first day. `usageStatusAtom` keeps the last
+  `IndexStatus`.
+- The 14-day strip ends today when the visible range contains today, else on
+  the range's last day; it sits under the grid and is hidden when its 14 days
+  have no usage. Clicking a bar picks that day. The "selected day" is the last
+  day opened (a click on a cell, which still opens the Day sheet) or picked on
+  the strip, else today; the Today button resets it. The Usage block sits
+  under the strip, above Unscheduled, titled `Usage · today` or
+  `Usage · <Mon 3 Nov>`; its Refresh button runs an undebounced load (no
+  spinner). Usage errors toast once ("Could not read Claude usage") and never
+  block the activity dots.
+- The Today strip has its own source: three seconds after boot, then on the
+  Calendar's one-minute clock, today's usage is loaded when no load covering
+  today finished in the last five minutes (`usageIsStale`), so it stays
+  current with the Calendar closed.
+- Dev driver: `t.usage.{usageDaysAtom, usageStatusAtom, loadUsage, formatTokens}`.
+- Measured on the author's corpus (479 transcripts, 4.8 GB, 63 sessions with
+  turns): first refresh 0.87 s in a release build, 2.4 s in a debug test
+  build and 1.6 s in the debug app (warm page cache); index 164 KB; an
+  incremental refresh 1 to 75 ms; `usage_days` over 14 days 3 ms.
