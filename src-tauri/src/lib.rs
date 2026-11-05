@@ -9,6 +9,7 @@ mod search;
 mod sessions;
 mod theme;
 mod transcripts;
+mod usage;
 mod watchdog;
 mod workspace;
 
@@ -57,6 +58,8 @@ pub fn run() {
             sessions::sessions_list,
             search::search_index_refresh,
             search::search_sessions,
+            usage::usage_refresh,
+            usage::usage_days,
             projects::projects_info,
             projects::file_executable,
             workspace::workspace_scan,

@@ -502,6 +502,27 @@ pub fn refresh_index(
     })
 }
 
+/// The session ids that have a file of `kind` in `dir`.
+pub fn session_files(kind: &IndexKind, dir: &Path) -> Vec<(String, PathBuf)> {
+    let suffix = format!(".{}", kind.ext);
+    let Ok(rd) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut out: Vec<(String, PathBuf)> = rd
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name == INDEX_JSON || name.starts_with('.') {
+                return None;
+            }
+            let id = name.strip_suffix(&suffix)?.to_owned();
+            Some((id, e.path()))
+        })
+        .collect();
+    out.sort();
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
