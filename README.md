@@ -233,6 +233,19 @@ resize (30 to 70 %), double click it for half and half. The right tab shows a
 columns icon in the rail, the focused pane an accent line on top, and the
 split is kept in tabs.json across restarts.
 
+**Scratchpad**: Ctrl+Shift+Space (or the pencil at the end of the tab rail,
+or "Open scratchpad" in the palette) opens a drawer above the terminal to
+compose a long prompt in a Markdown editor. Ctrl+Enter sends it to the active
+tab as one bracketed paste and submits it, Ctrl+Shift+Enter (or Paste) pastes
+it without submitting, Ctrl+L or Clear empties it (asking first over 200
+characters), Esc goes back to the terminal with the drawer still open. Drafts
+are kept per project in `~/.local/share/kansei/scratch/` (saved 400 ms after
+the last edit) and switch with the active tab; the Drafts menu opens another
+one until the next tab change. Dropping a Projects row or a file from the file
+manager on the editor, or picking files with "@", inserts `@path`
+references, relative inside the tab's project. Drag the drawer's bottom edge
+to resize it (up to 60 % of the column), double click it for the default.
+
 **Project accents**: every workspace project has a colour from the terminal
 palette (red, yellow, green, cyan, blue, magenta), picked from a hash of its
 path or set in the Projects panel's Edit sheet (Accent: Auto or one of the
@@ -423,7 +436,9 @@ Ctrl+Shift+B toggle sidebar, Ctrl+Shift+1..9 and 0 jump to the first ten
 sections in nav order (Projects, Board, Calendar, Sessions, Memory, Rules,
 MCPs, Agents, Skills, Workflows), Ctrl+Shift+H opens Hooks and Ctrl+Shift+,
 Settings, Ctrl+Shift+P toggles the command palette (see
-[Panels](#panels)), Ctrl+Shift+\\ toggles the split terminal (see [Run](#run)), Esc closes the editor sheet, the palette and the
+[Panels](#panels)), Ctrl+Shift+\\ toggles the split terminal and Ctrl+Shift+Space the
+prompt scratchpad (see [Run](#run); inside it Ctrl+Enter sends, Ctrl+Shift+Enter
+pastes, Ctrl+L clears, Esc returns to the terminal), Esc closes the editor sheet, the palette and the
 Projects, Board and Calendar sheets, Ctrl+S saves in the editor, Ctrl+Enter saves the Edit sheet,
 Ctrl+Shift+C / V copy and paste in the terminal.
 

@@ -8,6 +8,18 @@ releases yet; everything so far is on `main` as 0.1.x.
 
 ### Added
 
+- **Prompt scratchpad** (2026-11-04). Ctrl+Shift+Space, the pencil at the end
+  of the tab rail or "Open scratchpad" in the palette opens a drawer between
+  the tab rail and the terminal with a Markdown editor for long prompts.
+  Ctrl+Enter (Send) puts the draft into the active tab as one bracketed paste
+  and submits it, Ctrl+Shift+Enter (Paste) leaves it on the prompt line; a
+  dead or starting tab is never written to. Drafts are kept per project in
+  `scratch/<project>.md` in the data dir, follow the active tab, and the
+  Drafts menu reopens older ones. Projects rows and files dropped from the
+  OS, or picked with "@", become `@path` references (relative inside the
+  tab's project). The drawer's height drags from 120 px to 60 % of the column
+  and is kept in prefs.json with its open state.
+
 - **Memory graph** (2026-11-04). The Memory panel's header gets a List /
   Graph switch (kept in prefs as `memoryView`). The graph shows every note in
   every `~/.claude/projects/*/memory` folder and the `[[links]]` between them
