@@ -48,6 +48,7 @@ name with it, and the app moves `~/.local/share/tsukue` to `kansei` on first sta
 - Ctrl+Shift+1..9 and 0 jump to the first ten sidebar sections in nav order (Projects, Board, Calendar, Sessions, Memory, Rules, MCPs, Agents, Skills, Workflows; 0 is Workflows)
 - Ctrl+Shift+H opens Hooks, Ctrl+Shift+, (comma) opens Settings (`PANEL_KEYS` in `src/app/shortcuts.ts`; the nav tooltips come from `panelShortcut`)
 - Ctrl+Shift+P opens the command palette (see "Command palette")
+- Ctrl+Shift+\ toggles the split terminal (see "Split terminal")
 - Esc closes the editor sheet, Ctrl+S saves inside it
 
 ## Rust commands (all `#[tauri::command]`, args are camelCase JSON objects)
@@ -1666,3 +1667,61 @@ Persistence list in CONTRACT gets `<appData>/usage/`.
   turns): first refresh 0.87 s in a release build, 2.4 s in a debug test
   build and 1.6 s in the debug app (warm page cache); index 164 KB; an
   incremental refresh 1 to 75 ms; `usage_days` over 14 days 3 ms.
+
+## Split terminal (added 2026-11-04)
+
+Two tabs side by side: watch one agent while prompting another. Task kansei#12.
+
+### Model (`src/app/split.ts`, pure helpers tested in `split.test.ts`)
+
+```ts
+type Split = { right: string | null; ratio: number };   // right = tab key on the right pane, ratio = left width share 0.3..0.7
+export const splitAtom = atom<Split>({ right: null, ratio: 0.5 });
+```
+
+- The left pane always shows the active tab (`activeKeyAtom`), as the whole area
+  does today. The right pane shows `split.right` when set; the two are never the
+  same tab: activating the right tab makes it the active (left) tab and the
+  previous active tab moves to the right (`swapIntoLeft`), so the user sees the
+  same two terminals with focus on the one they picked. Activating a third tab
+  replaces the left pane only.
+- Closing or losing the right tab (`closeTab`, pty death does not unsplit)
+  clears `right`. Closing the left tab activates another as today and keeps the
+  right pane.
+- Persistence: tabs.json gains `split: { right: <index into tabs> | null, ratio }`
+  written with the tabs and restored with them (index, because keys are new
+  after a restart; out of range or equal to the active index = no split).
+- Commands: `splitWith(key)`, `unsplit()`, `toggleSplit()` (split with the next
+  tab in rail order when unsplit, else unsplit), `setRatio(r)` clamped.
+
+### UI
+
+- `TerminalArea`: when `right` is set, two pane containers in a row with a 6 px
+  divider (`cursor: col-resize`, pointer events, `setRatio` while dragging,
+  double click resets 0.5). Each `TerminalView` mounts into the pane that shows
+  it; `attachTerminal` already moves a terminal's host between containers, and
+  the per-container `ResizeObserver` fits it. Tabs in neither pane stay
+  `display: none`. A thin accent top border on the focused pane (the one that
+  last received a mouse down or keyboard focus); clicking a pane focuses its
+  terminal and, for the right pane, does not change the active tab.
+- Tab rail: the right pane's tab shows a small Columns icon (lucide
+  `Columns2`) before its title; right click on any tab opens a small menu with
+  "Open on the right" (or "Close the right pane" when it is the right tab),
+  "Rename", "Close". Dragging a tab (HTML5 drag from the rail item) over the
+  terminal area shows a right-half drop zone; dropping there splits with it.
+- Keyboard: Ctrl+Shift+\ toggles the split (shortcut action `toggleSplit`,
+  code Backslash). Ctrl+PageUp/PageDown keep cycling the active (left) tab.
+- Palette: "Split with <tab>" per tab except the active one, "Close the right
+  pane" when split.
+- Dev driver: `t.split.{splitAtom, splitWith, unsplit, toggleSplit, setRatio}`.
+
+### Tests
+
+`split.test.ts`: swapIntoLeft, replace-left on a third tab, unsplit on closing
+the right tab, keep on closing the left, ratio clamp, tabs.json round trip of
+the index form (restore with a missing or equal index yields no split).
+
+### Docs
+
+README Run section (a Split paragraph) and Keyboard; CONTRACT "Keyboard" and
+"Persistence" lines; CHANGELOG under Unreleased.
