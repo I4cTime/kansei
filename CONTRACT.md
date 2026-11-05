@@ -1957,6 +1957,13 @@ gets `<appData>/mcp-health.json`, prefs.ts doc comment.
   not as `-H` arguments, so tokens never show in the process list. curl is
   stopped by our own backstop 2 s after its `-m 8`. `ok` and `failed` carry
   `HTTP <code>` as detail, `auth` "HTTP 401: reachable, needs sign-in".
+- `${VAR}` and `${VAR:-default}` in command, args, env values, cwd, url and
+  header values are expanded from Kansei's own environment before the probe,
+  as Claude Code does (the live config has `Authorization: Bearer
+  ${GITHUB_TOKEN}`; sent literally, GitHub answers 400). A server that needs a
+  variable Kansei's environment does not have (the launcher loads such tokens
+  from q-ring only for claude) is `skipped` with "uses ${NAME}, not set in
+  Kansei's environment ..."; values never reach `detail`.
 - Plugin keys are `plugin|<plugin>@<marketplace>|<name>`, connector keys
   `connector||<name>`: connectors go through `mcp_health_check` too and come
   back `skipped` ("claude.ai connector: no transport Kansei can probe"), so

@@ -14,6 +14,10 @@
 //!   headers go to curl on stdin (`-H @-`), not on its command line, so their
 //!   values (tokens) never show in `ps`.
 //!
+//! - `${VAR}` and `${VAR:-default}` in command, args, env, url and headers
+//!   are expanded from Kansei's environment as Claude Code does; a server that
+//!   needs an unset variable is skipped, naming only the variable.
+//!
 //! Probes run three at a time; each result is emitted as `mcp:health` when it
 //! finishes, and the batch is merged into `<appData>/mcp-health.json`.
 
@@ -226,6 +230,84 @@ pub fn transport_of(config: &Value) -> Transport {
         "sse" => Transport::Skip("sse transport: not probed (no single request/answer)".into()),
         other => Transport::Skip(format!("unknown transport \"{other}\"")),
     }
+}
+
+/// `${NAME}` and `${NAME:-default}` replaced the way Claude Code expands
+/// them in MCP configs (command, args, env, url, headers), from `lookup`.
+/// Names that are unset (and have no default) are pushed to `missing`.
+pub fn expand(
+    s: &str,
+    lookup: &dyn Fn(&str) -> Option<String>,
+    missing: &mut Vec<String>,
+) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(at) = rest.find("${") {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + 2..];
+        let Some(end) = after.find('}') else {
+            out.push_str(&rest[at..]);
+            return out;
+        };
+        let inner = &after[..end];
+        let (name, default) = match inner.split_once(":-") {
+            Some((n, d)) => (n, Some(d)),
+            None => (inner, None),
+        };
+        let valid = !name.is_empty()
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            && !name.starts_with(|c: char| c.is_ascii_digit());
+        if !valid {
+            out.push_str(&rest[at..at + 3 + end]);
+        } else {
+            match (lookup(name), default) {
+                (Some(v), Some(d)) if v.is_empty() => out.push_str(d),
+                (Some(v), _) => out.push_str(&v),
+                (None, Some(d)) => out.push_str(d),
+                (None, None) => {
+                    if !missing.iter().any(|m| m == name) {
+                        missing.push(name.to_string());
+                    }
+                }
+            }
+        }
+        rest = &after[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `t` with every `${VAR}` expanded; skipped (naming the variables, never
+/// their values) when one is not set in Kansei's environment.
+pub fn expand_transport(t: Transport, lookup: &dyn Fn(&str) -> Option<String>) -> Transport {
+    let mut missing = Vec::new();
+    let mut x = |s: &str| expand(s, lookup, &mut missing);
+    let t = match t {
+        Transport::Stdio {
+            command,
+            args,
+            env,
+            cwd,
+        } => Transport::Stdio {
+            command: x(&command),
+            args: args.iter().map(|a| x(a)).collect(),
+            env: env.iter().map(|(k, v)| (k.clone(), x(v))).collect(),
+            cwd: cwd.as_deref().map(&mut x),
+        },
+        Transport::Http { url, headers } => Transport::Http {
+            url: x(&url),
+            headers: headers.iter().map(|h| x(h)).collect(),
+        },
+        skip => skip,
+    };
+    if missing.is_empty() {
+        return t;
+    }
+    let names: Vec<String> = missing.iter().map(|m| format!("${{{m}}}")).collect();
+    Transport::Skip(format!(
+        "uses {}, not set in Kansei's environment (Claude Code may get it from its launcher)",
+        names.join(", ")
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -614,7 +696,8 @@ pub fn probe(t: &Target, p: &Probe) -> McpHealth {
     let out = if t.scope == "connector" {
         Outcome::skipped("claude.ai connector: no transport Kansei can probe")
     } else {
-        match transport_of(&t.config) {
+        let env = |name: &str| std::env::var(name).ok();
+        match expand_transport(transport_of(&t.config), &env) {
             Transport::Skip(why) => Outcome::skipped(why),
             Transport::Stdio {
                 command,
@@ -855,6 +938,61 @@ mod tests {
         );
         assert!(matches!(transport_of(&json!({})), Transport::Skip(_)));
         assert!(matches!(transport_of(&json!("x")), Transport::Skip(_)));
+    }
+
+    #[test]
+    fn expands_env_placeholders_like_claude_code() {
+        let lookup = |n: &str| match n {
+            "TOKEN" => Some("t0k".to_string()),
+            "EMPTY" => Some(String::new()),
+            _ => None,
+        };
+        let mut missing = Vec::new();
+        assert_eq!(
+            expand("Bearer ${TOKEN}", &lookup, &mut missing),
+            "Bearer t0k"
+        );
+        assert_eq!(
+            expand("${NOPE:-dflt}/${EMPTY:-e}/${EMPTY}", &lookup, &mut missing),
+            "dflt/e/"
+        );
+        assert_eq!(
+            expand("$TOKEN ${1X} ${} ${open", &lookup, &mut missing),
+            "$TOKEN ${1X} ${} ${open"
+        );
+        assert!(missing.is_empty());
+        assert_eq!(expand("a${NOPE}b${NOPE}", &lookup, &mut missing), "ab");
+        assert_eq!(missing, ["NOPE"]);
+
+        let http = transport_of(
+            &json!({ "type": "http", "url": "https://x/${NOPE:-mcp}", "headers": { "Authorization": "Bearer ${TOKEN}" } }),
+        );
+        assert_eq!(
+            expand_transport(http, &lookup),
+            Transport::Http {
+                url: "https://x/mcp".into(),
+                headers: vec!["Authorization: Bearer t0k".into()]
+            }
+        );
+        let stdio = transport_of(
+            &json!({ "command": "${HOME_BIN:-/bin}/sh", "args": ["${TOKEN}"], "env": { "K": "${TOKEN}" } }),
+        );
+        assert_eq!(
+            expand_transport(stdio, &lookup),
+            Transport::Stdio {
+                command: "/bin/sh".into(),
+                args: vec!["t0k".into()],
+                env: vec![("K".into(), "t0k".into())],
+                cwd: None
+            }
+        );
+        let unset = transport_of(
+            &json!({ "url": "https://x", "headers": { "Authorization": "Bearer ${GITHUB_TOKEN}" } }),
+        );
+        let Transport::Skip(why) = expand_transport(unset, &lookup) else {
+            panic!("not skipped")
+        };
+        assert!(why.starts_with("uses ${GITHUB_TOKEN}, not set"), "{why}");
     }
 
     #[test]
