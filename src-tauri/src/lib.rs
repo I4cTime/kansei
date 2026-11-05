@@ -8,6 +8,7 @@ mod pty;
 mod search;
 mod sessions;
 mod theme;
+mod transcripts;
 mod watchdog;
 mod workspace;
 
