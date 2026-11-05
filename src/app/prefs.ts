@@ -37,6 +37,9 @@
 //   projectAccents:   boolean              tint each tab, the terminal column and the sidebar header with
 //                                          the active tab's project colour (default true; the Calendar dots
 //                                          keep their colours regardless, see src/app/accents.ts)
+//   mcpHealthAtStartup: boolean            probe every MCP server (user, plugin and the active project's)
+//                                          with an initialize handshake 5 s after startup; results in
+//                                          <appData>/mcp-health.json (default true, see src/panels/mcps/health.ts)
 //
 // Usage from a panel:
 //   const prefs = useAtomValue(prefsAtom);
@@ -75,6 +78,7 @@ export type Prefs = {
   notifyWaiting: boolean;
   paletteRecent: string[];
   projectAccents: boolean;
+  mcpHealthAtStartup: boolean;
 };
 
 export const CONTEXT_WINDOW_MIN = 50_000;
@@ -109,6 +113,7 @@ export const DEFAULT_PREFS: Prefs = {
   notifyWaiting: true,
   paletteRecent: [],
   projectAccents: true,
+  mcpHealthAtStartup: true,
 };
 
 export const prefsAtom = atom<Prefs>(DEFAULT_PREFS);
@@ -197,6 +202,7 @@ export function sanitizePrefs(raw: unknown): Prefs {
     notifyWaiting: typeof r.notifyWaiting === "boolean" ? r.notifyWaiting : d.notifyWaiting,
     paletteRecent: stringList(r.paletteRecent, d.paletteRecent).slice(0, PALETTE_RECENT_MAX),
     projectAccents: typeof r.projectAccents === "boolean" ? r.projectAccents : d.projectAccents,
+    mcpHealthAtStartup: typeof r.mcpHealthAtStartup === "boolean" ? r.mcpHealthAtStartup : d.mcpHealthAtStartup,
   };
 }
 

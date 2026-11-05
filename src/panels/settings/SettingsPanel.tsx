@@ -351,6 +351,13 @@ function AppSettings() {
           </div>
           <span className="text-[11px] text-fg-muted">A desktop notification when Claude in a tab you are not looking at asks for permission, asks a question or finishes its turn.</span>
         </div>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-[11px] font-medium uppercase tracking-wide text-fg-muted">Check MCP servers at startup</span>
+            <Toggle label="Check MCP servers at startup" checked={prefs.mcpHealthAtStartup} onChange={(v) => save({ mcpHealthAtStartup: v })} />
+          </div>
+          <span className="text-[11px] text-fg-muted">Five seconds after Kansei starts, each MCP server gets an initialize handshake (8 s at most, then it is stopped). The MCPs panel shows which ones start.</span>
+        </div>
       </div>
       <Appearance prefs={prefs} save={save} />
       <Note>Saved to ~/.local/share/kansei/prefs.json. Terminals pick up font and theme changes live.</Note>

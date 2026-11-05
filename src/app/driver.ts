@@ -30,6 +30,8 @@ import { indexStatusAtom, indexingAtom, refreshIndex } from "../panels/sessions/
 import { formatTokens, loadUsage, usageDaysAtom, usageStatusAtom } from "../panels/calendar/usage";
 import { ACCENT_NAMES, accentFor, accentVar, tabAccent, tabProject } from "./accents";
 import { accentOfAtom, activeAccentAtom } from "./accentState";
+import { checkAll as mcpCheckAll, checkServers as mcpCheckServers, checkingAtom as mcpCheckingAtom, failedCountAtom as mcpFailedCountAtom, healthAtom as mcpHealthAtom } from "../panels/mcps/health";
+import { mcpHealth as mcpHealthIpc } from "../lib/ipc";
 
 declare global {
   interface Window {
@@ -53,7 +55,7 @@ export function installDriver() {
     dismissOverlay,
     invoke,
     listen,
-    ipc: { activity: activityIpc, pty, files, memory, mcp, projects: projectsIpc, sessions: sessionsIpc, project: projectIpc, workspace: workspaceIpc, board: boardIpc, schedule: scheduleIpc },
+    ipc: { activity: activityIpc, pty, files, memory, mcp, mcpHealth: mcpHealthIpc, projects: projectsIpc, sessions: sessionsIpc, project: projectIpc, workspace: workspaceIpc, board: boardIpc, schedule: scheduleIpc },
     /**
      * Board atoms and pure helpers (boardConfigAtom, snapshotAtom, ghStatusAtom, laneGroups, areaProject...) and its
      * actions (configureBoard, disconnectBoard, refreshBoard, setItemField: writes to GitHub).
@@ -99,6 +101,11 @@ export function installDriver() {
     accents: { accentFor, tabProject, ACCENT_NAMES, accentVar, tabAccent, accentOfAtom, activeAccentAtom },
     /** Tab status and context: activityAtom (per pty pid, after the idle-after-busy rule) and tabActivity(tab). */
     activity: { activityAtom, tabActivity },
+    /**
+     * MCP health: healthAtom (key -> McpHealth), checkAll() (user, plugin, connector and the active project's servers),
+     * checkServers(targets), checkingAtom (keys in flight), failedCountAtom (fresh failed and timeout results).
+     */
+    mcpHealth: { healthAtom: mcpHealthAtom, checkAll: mcpCheckAll, checkServers: mcpCheckServers, checkingAtom: mcpCheckingAtom, failedCountAtom: mcpFailedCountAtom },
     /** querySelector that throws a readable error when nothing matches. */
     q(sel: string): HTMLElement {
       const el = document.querySelector<HTMLElement>(sel);

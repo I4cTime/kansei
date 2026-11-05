@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { Braces, ChevronDown, ChevronRight, Eye, EyeOff, FileText, Plus, Trash } from "lucide-react";
+import { useAtomValue } from "jotai";
+import { Braces, ChevronDown, ChevronRight, Eye, EyeOff, FileText, HeartPulse, Plus, Trash } from "lucide-react";
 import { mcp, type McpExtras, type McpServer } from "../../lib/ipc";
 import { Badge, Button, Field, IconButton, Select, TextArea, TextInput, cx } from "../ui";
 import { CodeEditor } from "../shared/CodeEditor";
@@ -9,9 +10,12 @@ import { ConfirmBar, EmptyState, Note, Panel, Row, SectionHeader } from "../shar
 import { basename, joinPath, tildify } from "../shared/paths";
 import { ScopeSwitch, useScope } from "../shared/ScopeSwitch";
 import { refreshProject } from "../../app/project";
+import { checkAll, checkingAtom, connectorTarget, healthKey, pluginTarget } from "./health";
+import { CheckButton, CheckingBadge, HealthDetail, HealthDot } from "./HealthBits";
 import { configFromForm, emptyForm, formFromConfig, shortVersion, summaryOf, targetOf, transportOf, type McpForm } from "./model";
 
-const keyOf = (s: { scope: string; project?: string; name: string }) => `${s.scope}|${s.project ?? ""}|${s.name}`;
+/** Same key as the health results (health.ts healthKey). */
+const keyOf = healthKey;
 
 const MASK = "••••••";
 const SECRET_KEYS = ["headers", "env"] as const;
@@ -50,6 +54,7 @@ export function McpPanel() {
     [],
   );
   const [editing, setEditing] = useState<string | null>(null); // key, or "new"
+  const anyChecking = Object.keys(useAtomValue(checkingAtom)).length > 0;
 
   const fileServers = useMemo(
     () => (projectRoot ? (servers.data ?? []).filter((s) => s.scope === "projectFile").sort((a, b) => a.name.localeCompare(b.name)) : []),
@@ -93,7 +98,12 @@ export function McpPanel() {
         void servers.reload();
         void extras.reload();
       }}
-      actions={<IconButton icon={Plus} title="Add server" onClick={() => setEditing("new")} />}
+      actions={
+        <>
+          <IconButton icon={HeartPulse} title={anyChecking ? "Checking MCP servers" : "Check all servers"} disabled={anyChecking} onClick={() => void checkAll()} />
+          <IconButton icon={Plus} title="Add server" onClick={() => setEditing("new")} />
+        </>
+      }
     >
       <ScopeSwitch
         value={choice}
@@ -118,13 +128,21 @@ export function McpPanel() {
             return (
               <div key={k}>
                 <Row
+                  lead={<HealthDot k={k} />}
                   title={s.name}
-                  badge={<Badge tone={transportOf(s.config) === "stdio" ? "muted" : "accent"}>{transportOf(s.config)}</Badge>}
+                  badge={
+                    <>
+                      <Badge tone={transportOf(s.config) === "stdio" ? "muted" : "accent"}>{transportOf(s.config)}</Badge>
+                      <CheckingBadge k={k} />
+                    </>
+                  }
                   subtitle={<span className="font-mono">{summaryOf(s.config)}</span>}
                   tooltip={summaryOf(s.config)}
                   active={open}
                   onClick={() => setEditing(open ? null : k)}
+                  actions={<CheckButton target={s} />}
                 />
+                <HealthDetail k={k} />
                 {open && <McpEditor server={s} fixed={fixed} projectPaths={[]} onDone={done} onCancel={() => setEditing(null)} />}
               </div>
             );
@@ -159,13 +177,21 @@ export function McpPanel() {
                   return (
                     <div key={k}>
                       <Row
+                        lead={<HealthDot k={k} />}
                         title={s.name}
-                        badge={<Badge tone={transportOf(s.config) === "stdio" ? "muted" : "accent"}>{transportOf(s.config)}</Badge>}
+                        badge={
+                          <>
+                            <Badge tone={transportOf(s.config) === "stdio" ? "muted" : "accent"}>{transportOf(s.config)}</Badge>
+                            <CheckingBadge k={k} />
+                          </>
+                        }
                         subtitle={<span className="font-mono">{summaryOf(s.config)}</span>}
                         tooltip={summaryOf(s.config)}
                         active={open}
                         onClick={() => setEditing(open ? null : k)}
+                        actions={<CheckButton target={s} />}
                       />
+                      <HealthDetail k={k} />
                       {open && <McpEditor server={s} projectPaths={projectPaths} onDone={done} onCancel={() => setEditing(null)} />}
                     </div>
                   );
@@ -227,31 +253,44 @@ function ExtrasGroups({ data, home }: { data: McpExtras | null; home: string | u
             const note = typeof p.config.note === "string" ? p.config.note : "";
             const target = targetOf(p.config);
             const version = shortVersion(p.version);
+            const probe = pluginTarget(p);
+            const hk = healthKey(probe);
             return (
-              <Row
-                key={`${p.file}|${p.name}`}
-                title={muted(p.name)}
-                badge={<Badge tone="muted">{transportOf(p.config)}</Badge>}
-                subtitle={note || <span className="font-mono">{target}</span>}
-                clamp={note ? 2 : 1}
-                tooltip={[summaryOf(p.config), note, `Plugin ${p.plugin}${p.marketplace ? `@${p.marketplace}` : ""}${p.version ? ` ${p.version}` : ""}`].filter(Boolean).join("\n")}
-                extra={
-                  <>
-                    <Badge title={tildify(p.file, home)}>{version ? `${p.plugin} ${version}` : p.plugin}</Badge>
-                    {note && target && <Badge className="font-mono">{target}</Badge>}
-                    {p.enabled === false && <Badge tone="warn">disabled</Badge>}
-                    {p.needsAuth && <Badge tone="warn">needs auth</Badge>}
-                    {p.scope && p.scope !== "user" && <Badge title={p.projectPath ?? undefined}>{p.scope}</Badge>}
-                  </>
-                }
-                actions={
-                  <IconButton
-                    icon={FileText}
-                    title={`Open ${tildify(p.file, home)} (read only)`}
-                    onClick={() => openEditor({ path: p.file, title: `${p.plugin} .mcp.json`, readOnly: true, note: "Installed by the plugin. Claude Code manages this file; Kansei only shows it." })}
-                  />
-                }
-              />
+              <div key={`${p.file}|${p.name}`}>
+                <Row
+                  lead={<HealthDot k={hk} />}
+                  title={muted(p.name)}
+                  badge={
+                    <>
+                      <Badge tone="muted">{transportOf(p.config)}</Badge>
+                      <CheckingBadge k={hk} />
+                    </>
+                  }
+                  subtitle={note || <span className="font-mono">{target}</span>}
+                  clamp={note ? 2 : 1}
+                  tooltip={[summaryOf(p.config), note, `Plugin ${p.plugin}${p.marketplace ? `@${p.marketplace}` : ""}${p.version ? ` ${p.version}` : ""}`].filter(Boolean).join("\n")}
+                  extra={
+                    <>
+                      <Badge title={tildify(p.file, home)}>{version ? `${p.plugin} ${version}` : p.plugin}</Badge>
+                      {note && target && <Badge className="font-mono">{target}</Badge>}
+                      {p.enabled === false && <Badge tone="warn">disabled</Badge>}
+                      {p.needsAuth && <Badge tone="warn">needs auth</Badge>}
+                      {p.scope && p.scope !== "user" && <Badge title={p.projectPath ?? undefined}>{p.scope}</Badge>}
+                    </>
+                  }
+                  actions={
+                    <>
+                      <CheckButton target={probe} />
+                      <IconButton
+                        icon={FileText}
+                        title={`Open ${tildify(p.file, home)} (read only)`}
+                        onClick={() => openEditor({ path: p.file, title: `${p.plugin} .mcp.json`, readOnly: true, note: "Installed by the plugin. Claude Code manages this file; Kansei only shows it." })}
+                      />
+                    </>
+                  }
+                />
+                <HealthDetail k={hk} />
+              </div>
             );
           })}
         </>
@@ -263,6 +302,7 @@ function ExtrasGroups({ data, home }: { data: McpExtras | null; home: string | u
           {data.connectors.map((c) => (
             <Row
               key={c.name}
+              lead={<HealthDot k={healthKey(connectorTarget(c))} />}
               title={muted(c.name)}
               subtitle="Managed at claude.ai, not editable here"
               extra={c.needsAuth ? <Badge tone="warn">needs auth</Badge> : undefined}

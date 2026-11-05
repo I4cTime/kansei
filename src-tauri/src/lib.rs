@@ -2,6 +2,7 @@ mod activity;
 mod board;
 mod files;
 mod mcp;
+mod mcp_health;
 mod memory;
 mod projects;
 mod pty;
@@ -55,6 +56,8 @@ pub fn run() {
             mcp::mcp_upsert,
             mcp::mcp_remove,
             mcp::mcp_extras,
+            mcp_health::mcp_health_check,
+            mcp_health::mcp_health_cached,
             sessions::sessions_list,
             search::search_index_refresh,
             search::search_sessions,

@@ -155,7 +155,13 @@ shortcuts (see [Keyboard](#keyboard)).
   `~/.claude/projects`.
 - **Rules**: user and project `.claude/rules` files, with their path globs.
 - **MCPs**: MCP servers in `~/.claude.json` and `.mcp.json`, user and project
-  scope, plus a read-only list of plugin, claude.ai and built-in servers.
+  scope, plus a read-only list of plugin, claude.ai and built-in servers. Each
+  server gets a health dot from a real `initialize` handshake (green started,
+  yellow reachable but needs sign-in, red failed or timed out, grey skipped or
+  not checked); failed rows unfold to the server's stderr. Check one server
+  or all of them; the check also runs 5 s after startup (Settings, This app,
+  "Check MCP servers at startup") and the MCPs icon gets a red dot when one
+  failed.
 - **Agents**: subagent definitions in `~/.claude/agents` and the project's
   `.claude/agents`.
 - **Skills**: skills in `~/.claude/skills` and the project's `.claude/skills`.

@@ -10,6 +10,7 @@ import { panelShortcut } from "./shortcuts";
 import { IconButton } from "./ui";
 import { accentVar, chipName } from "./accents";
 import { activeAccentAtom } from "./accentState";
+import { failedCountAtom } from "../panels/mcps/health";
 
 /**
  * One line above the nav: today's area, how many tasks are scheduled (the
@@ -63,6 +64,7 @@ export function Sidebar() {
   const prefs = useAtomValue(prefsAtom);
   const collapsed = prefs.sidebarCollapsed;
   const active = PANELS.find((p) => p.id === prefs.sidebarSection) ?? PANELS[0];
+  const mcpFailed = useAtomValue(failedCountAtom);
   const [dragging, setDragging] = useState(false);
   const drag = useRef<{ x: number; w: number } | null>(null);
 
@@ -125,11 +127,12 @@ export function Sidebar() {
             const Icon = p.icon;
             const keys = panelShortcut(p.id, i);
             const hint = keys ? ` (${keys})` : "";
+            const failed = p.id === "mcps" && mcpFailed > 0 ? `${mcpFailed} MCP ${mcpFailed === 1 ? "server" : "servers"} failed to start` : null;
             return (
               <button
                 key={p.id}
                 type="button"
-                title={collapsed ? `${p.label}${hint}` : (keys ?? undefined)}
+                title={[collapsed ? `${p.label}${hint}` : keys, failed].filter(Boolean).join("\n") || undefined}
                 aria-label={p.label}
                 aria-current={isActive ? "page" : undefined}
                 onClick={() => setPrefs({ sidebarSection: p.id, sidebarCollapsed: false })}
@@ -138,7 +141,10 @@ export function Sidebar() {
                 } ${isActive ? "bg-accent/15 text-accent" : "text-fg-muted hover:bg-bg-hover hover:text-fg"}`}
               >
                 {isActive && !collapsed && <span className="absolute inset-y-1.5 left-0 w-[2px] rounded-full bg-accent" />}
-                <Icon size={16} strokeWidth={1.75} className="shrink-0" />
+                <span className="relative flex shrink-0">
+                  <Icon size={16} strokeWidth={1.75} />
+                  {failed && <span data-mcp-failed={mcpFailed} className="absolute -top-0.5 -right-0.5 h-[6px] w-[6px] rounded-full bg-danger" />}
+                </span>
                 {!collapsed && <span className="truncate">{p.label}</span>}
               </button>
             );

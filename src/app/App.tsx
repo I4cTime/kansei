@@ -15,6 +15,7 @@ import { startTheme } from "./theme/apply";
 import { startWorkspaces } from "../panels/projects/workspaceStore";
 import { startBoard } from "../panels/board/actions";
 import { startCalendar } from "../panels/calendar/actions";
+import { startMcpHealth } from "../panels/mcps/health";
 
 let booted = false;
 async function boot() {
@@ -31,6 +32,7 @@ async function boot() {
   startWorkspaces();
   startBoard();
   startCalendar();
+  startMcpHealth().catch((e) => toastError(e, "Could not listen for MCP health results"));
   await restoreTabs();
 }
 

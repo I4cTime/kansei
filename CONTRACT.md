@@ -202,6 +202,8 @@ The files allowlist needed no change: `~/.claude/**` was already readable.
   `index.json` (see "Session search"). A cache: deleting it only costs a rebuild.
 - `usage/`: the token usage index, `<sessionId>.json` per-day and per-model
   buckets and `index.json` (see "Usage"). A cache like `search/`.
+- `mcp-health.json`: `{ results: Record<key, McpHealth> }`, the last probe
+  result per MCP server key, merged on every check (see "MCP health").
 
 ## Visual language
 
@@ -1859,3 +1861,119 @@ doc comment, CONTRACT Workspaces registry shape gets `accent`.
   swatch shows the hashed colour (dimmed).
 - Dev driver: `t.accents` also has `accentVar`, `tabAccent`, `accentOfAtom`
   and `activeAccentAtom`.
+
+## MCP health (added 2026-11-04)
+
+Each configured MCP server is probed with a real `initialize` handshake, so the
+MCPs panel shows which ones start and which fail, with the failure text. Task
+kansei#14 (it would have caught the q-ring hang, focus#26, earlier).
+
+### Rust (`src-tauri/src/mcp_health.rs`)
+
+```ts
+type McpHealthStatus = "ok" | "auth" | "failed" | "timeout" | "skipped";
+type McpHealth = {
+  key: string;                 // "<scope>|<project or ''>|<name>"
+  status: McpHealthStatus;
+  detail: string | null;       // stderr tail (last 2 KB, trimmed), HTTP status line, spawn error, or why skipped
+  ms: number | null;           // handshake latency
+  serverInfo: { name: string; version: string | null } | null;   // from the initialize result
+  checkedAt: number;           // epoch ms
+};
+```
+
+- `mcp_health_check { servers: McpServer[] } -> McpHealth[]`: probes with a
+  concurrency of 3 and emits `mcp:health` with each `McpHealth` as it finishes,
+  so the panel updates progressively; returns the full list at the end and
+  writes `<appData>/mcp-health.json` (`{ results: Record<key, McpHealth> }`,
+  merged with earlier keys). `mcp_health_cached() -> McpHealth[]` reads it.
+- stdio servers (`command`, `args`, `env`, `cwd` when present): spawn argv-only
+  with the configured env merged over the current environment (never logged),
+  stdin piped, write one JSON-RPC line
+  `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"kansei","version":"<app version>"}}}`
+  and read stdout line by line until a line parses as JSON with `"id":1`
+  (result -> `ok` with `serverInfo`, error -> `failed` with the error message),
+  8 s timeout -> `timeout`; the child is killed and reaped in every case
+  (SIGTERM, then SIGKILL after 1 s). The spawn itself failing (missing binary)
+  -> `failed` with the OS error. stderr is drained on its own thread into a
+  2 KB ring and becomes `detail` for failed and timeout.
+- http servers (`url`, optional `headers`): `curl` argv-only with
+  `-s -o /dev/null -w %{http_code} -m 8 -X POST -H Content-Type: application/json -H Accept: application/json, text/event-stream --data <the same initialize body>`
+  plus configured headers. 2xx -> `ok` (no serverInfo), 401 or 403 -> `auth`
+  ("reachable, needs sign-in"), other codes -> `failed` with the code, exit 28
+  -> `timeout`, other curl failures -> `failed` with curl's stderr. `curl`
+  missing -> `skipped`.
+- Unknown transport -> `skipped` with the reason. Servers whose `command` is
+  empty -> `skipped`.
+- Tests: the stdio probe against a tiny fake server written to a temp file
+  (a shell script that echoes a valid initialize result; one that writes to
+  stderr and exits 1; one that sleeps past the timeout, asserting the child is
+  gone afterwards), the key format, the cache merge, and the http status
+  mapping as a pure function.
+
+### Front end
+
+- `src/panels/mcps/health.ts`: `healthAtom: Record<key, McpHealth>`, fed by
+  `mcp_health_cached()` at boot and the `mcp:health` events; `checkServers(servers)`,
+  `checkAll()` (user servers plus plugin servers plus the active project's
+  servers), `healthKey(server)`; `failedCount` selector.
+- Startup: `prefs.mcpHealthAtStartup` (default true) runs `checkAll()` 5 s after
+  boot. Results older than 24 h are shown as stale (muted dot, title says
+  when).
+- MCPs panel: a 7 px dot before each server name (ok = `--ok`, auth = `--warn`,
+  failed and timeout = `--danger`, skipped or unknown = `--fg-muted`), title =
+  status, latency and `serverInfo`; for failed and timeout an expandable line
+  under the row with the detail in monospace (max 6 lines, scroll). A "Check"
+  icon button per row and a "Check all" header action; rows show "checking" while
+  in flight. Plugin and connector lists get the dot too (connectors are
+  skipped: no transport Kansei can probe).
+- Sidebar nav: the MCPs icon gets a small `--danger` dot when `failedCount > 0`.
+- Settings, This app: "Check MCP servers at startup" switch.
+- Dev driver: `t.mcpHealth.{healthAtom, checkAll, checkServers}`.
+- `src/lib/ipc.ts`: `mcpHealth.check(servers)`, `mcpHealth.cached()`, `mcpHealth.onResult(cb)`.
+
+### Docs
+
+README MCPs line under Panels, CHANGELOG under Unreleased, Persistence list
+gets `<appData>/mcp-health.json`, prefs.ts doc comment.
+
+### As implemented (2026-11-04)
+
+- `mcp_health.rs`: `transport_of` reads a config the way the panel's
+  `transportOf` does (`type` first, else `command` = stdio, `url` = http).
+  `type: "sse"` is skipped ("not probed": a GET stream has no single
+  answer), `streamable-http` counts as http, any other type is skipped as
+  unknown. A non-object `env` (the q-ring plugin writes `[]`) is ignored.
+- stdio children run in their own process group (`process_group(0)`); the
+  stop is SIGTERM to the group, a 1 s wait that checks the leader with
+  `waitid(WNOWAIT)` (so the group id stays reserved), SIGKILL to the group,
+  then `wait`. A server that exits without answering gives `failed` with its
+  stderr tail, or "exited (<status>) before answering initialize" when stderr
+  was empty; an `"id":1` error gives "initialize error: <message>". stdout
+  lines that are not JSON or carry another id (logs, notifications) are
+  skipped; at most 4 MB of stdout is read.
+- http: curl runs `-sS` (so failures still reach stderr) and the URL goes
+  through `--url`. Configured headers are passed on curl's stdin (`-H @-`),
+  not as `-H` arguments, so tokens never show in the process list. curl is
+  stopped by our own backstop 2 s after its `-m 8`. `ok` and `failed` carry
+  `HTTP <code>` as detail, `auth` "HTTP 401: reachable, needs sign-in".
+- `${VAR}` and `${VAR:-default}` in command, args, env values, cwd, url and
+  header values are expanded from Kansei's own environment before the probe,
+  as Claude Code does (the live config has `Authorization: Bearer
+  ${GITHUB_TOKEN}`; sent literally, GitHub answers 400). A server that needs a
+  variable Kansei's environment does not have (the launcher loads such tokens
+  from q-ring only for claude) is `skipped` with "uses ${NAME}, not set in
+  Kansei's environment ..."; values never reach `detail`.
+- Plugin keys are `plugin|<plugin>@<marketplace>|<name>`, connector keys
+  `connector||<name>`: connectors go through `mcp_health_check` too and come
+  back `skipped` ("claude.ai connector: no transport Kansei can probe"), so
+  they get a checked time like every other row.
+- `failedCount` counts fresh results only: a failure older than 24 h shows a
+  muted dot and does not light the nav dot. `checkAll` drops results for
+  user, plugin and connector servers that are no longer configured from the
+  atom (the cache keeps them); project results of other projects stay.
+- Results merge by `checkedAt` (a cached read never replaces a newer event).
+  Row keys in flight are skipped by `checkServers`; "Check all" is disabled
+  while anything is checking.
+- `Row` (shared/list.tsx) gained a `lead` slot for the dot. Dev driver also
+  exposes `checkingAtom` and `failedCountAtom`, and `t.ipc.mcpHealth`.
