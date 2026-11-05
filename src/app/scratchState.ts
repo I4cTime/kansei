@@ -149,10 +149,13 @@ export function registerScratchEditor(v: EditorView | null) {
   };
   apply();
   unsubView = store.sub(scratchTextAtom, apply);
-  if (focusWanted) {
-    focusWanted = false;
-    v.focus();
-  }
+  // After the mount settles: StrictMode mounts, destroys and mounts the editor again.
+  if (focusWanted)
+    setTimeout(() => {
+      if (view !== v || !focusWanted) return;
+      focusWanted = false;
+      v.focus();
+    }, 0);
 }
 
 /** The editor typed: keep the atom (and the file) in step. */
