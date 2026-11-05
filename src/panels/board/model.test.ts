@@ -33,7 +33,7 @@ describe("areaProject", () => {
   });
 
   it("falls back to a registry entry, then null", () => {
-    const registry = { "/d": { "/d/products/mcp-lookout": { description: "x", status: null, related: [] }, "/d/games/deathbell": { description: "", status: "parked" as const, related: [] } } };
+    const registry = { "/d": { "/d/products/mcp-lookout": { description: "x", status: null, related: [], accent: null }, "/d/games/deathbell": { description: "", status: "parked" as const, related: [], accent: null } } };
     expect(areaProject("deathbell", tree, registry)).toBe("/d/games/deathbell");
     expect(areaProject("sites", tree, registry)).toBeNull();
     expect(areaProject("lookout", tree, registry)).toBeNull();

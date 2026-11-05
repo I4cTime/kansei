@@ -1769,3 +1769,62 @@ README Run section (a Split paragraph) and Keyboard; CONTRACT "Keyboard" and
   every hidden tab's pty to 11x5 (pre-existing; more visible with the split
   hiding and showing panes).
 - Dev driver: also `t.split.rightKey()` and `t.split.focusedPaneAtom`.
+
+## Project accents (added 2026-11-04)
+
+A stable colour per workspace project that tints the tab, the terminal column
+and the sidebar header, so the window always says which repo the active tab is
+in. Task kansei#13.
+
+### Model (`src/app/accents.ts`, tested in `accents.test.ts`)
+
+```ts
+type AccentName = "red" | "yellow" | "green" | "cyan" | "blue" | "magenta";
+export const ACCENT_NAMES: AccentName[];                 // in that order
+export function accentFor(path: string, registry: Registry): AccentName;   // override or hash
+export function accentVar(name: AccentName): string;    // "var(--t-<name>)"
+export function tabProject(cwd: string, tree: WorkspaceNode[] | null): { path: string; name: string } | null;
+```
+
+- `accentFor`: the registry entry's `accent` when set, else the hash the
+  Calendar uses today (move `projectColour` from `src/panels/calendar/model.ts`
+  here and make the Calendar call `accentFor`, so dots, tabs and header agree).
+  The hash maps onto `ACCENT_NAMES`, so existing dot colours do not change.
+- `tabProject`: the deepest project or subproject in the workspace tree whose
+  path is the cwd or a parent of it; null when the cwd is under no root (then
+  the tab is tinted by `accentFor(cwd)` and shows the cwd basename).
+- Registry: `RegistryEntry` gains `accent: AccentName | null` (default null =
+  automatic), read and written with workspaces.json like the other fields.
+- Pref `projectAccents: boolean` (default true) turns the tinting off; the
+  Calendar dots keep their colours regardless.
+
+### UI
+
+- Tab rail: every tab gets a 3 px inner left edge in its project colour (a
+  `box-shadow: inset 3px 0 0 <colour>`, no layout change). The active tab's
+  indicator bar stays the theme accent.
+- Terminal column: a 2 px top border on the terminal area in the active tab's
+  colour (the tab rail's bottom border takes the colour; no extra height).
+  With a split, the right pane's top focus border uses that pane's project
+  colour when the pane is not focused and the theme accent when it is.
+- Sidebar header: right of the brand label, a chip with a 7 px dot in the
+  colour and the active tab's project name (basename, max 18 characters with
+  an ellipsis, title = full path). Hidden when the sidebar is collapsed or
+  there is no active tab.
+- Projects panel: tree rows show a 6 px dot in their colour before the name;
+  the Edit sheet gets an "Accent" row: Auto plus the six names, each with a
+  swatch, saved through `saveEntry`.
+- Dev driver: `t.accents.{accentFor, tabProject, ACCENT_NAMES}`.
+- Settings, This app, Appearance: "Project accents" switch (`prefs.projectAccents`).
+
+### Tests
+
+`accents.test.ts`: hash stability and distribution over the six names,
+override wins, `tabProject` deepest match (project vs subproject, trailing
+slash, a cwd outside every root), Calendar colours unchanged for a fixed path
+set (snapshot of three known paths).
+
+### Docs
+
+README Run or Panels (one paragraph), CHANGELOG under Unreleased, prefs.ts
+doc comment, CONTRACT Workspaces registry shape gets `accent`.
